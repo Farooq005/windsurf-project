@@ -50,7 +50,11 @@ def main():
                 
             # Display results
             st.success("Sync completed!")
-            st.json(result)
+            try:
+                st.json(result.model_dump())
+            except Exception:
+                # Fallback if pydantic version mismatch
+                st.json(result.__dict__)
             
         except Exception as e:
             st.error(f"Error during sync: {str(e)}")
@@ -77,12 +81,21 @@ def main():
                 
                 # Display results
                 st.success("JSON processing completed!")
-                st.json({
-                    "entries_processed": len(json_data),
-                    "success_count": result.success_count,
-                    "error_count": result.error_count,
-                    "errors": result.errors
-                })
+                try:
+                    st.json({
+                        "entries_processed": len(json_data),
+                        "success_count": result.success_count,
+                        "error_count": result.error_count,
+                        "errors": result.errors,
+                        "differences": result.model_dump().get("differences")
+                    })
+                except Exception:
+                    st.json({
+                        "entries_processed": len(json_data),
+                        "success_count": result.success_count,
+                        "error_count": result.error_count,
+                        "errors": result.errors
+                    })
                 
             except json.JSONDecodeError:
                 st.error("Invalid JSON file")

@@ -47,14 +47,31 @@ class AnimeSyncManager:
         success = 0
         errors = []
         
+        status_map = {
+            "current": "watching",
+            "watching": "watching",
+            "completed": "completed",
+            "paused": "on_hold",
+            "on_hold": "on_hold",
+            "dropped": "dropped",
+            "planning": "plan_to_watch",
+            "plan_to_watch": "plan_to_watch",
+        }
+
         for entry in entries:
             try:
-                # TODO: Implement MAL update logic
-                # This is a placeholder for the actual MAL update API call
+                mapped_status = status_map.get((entry.status or "").lower())
+                self.mal_client.save_list_entry(
+                    title=entry.title,
+                    status=mapped_status,
+                    score=entry.score,
+                    progress=entry.episodes_watched,
+                )
                 success += 1
+                time.sleep(0.2)
             except Exception as e:
                 errors.append(f"Failed to sync {entry.title}: {str(e)}")
-                time.sleep(1)  # Rate limiting
+                time.sleep(0.5)
 
         return {"success": success, "errors": errors}
 
@@ -63,14 +80,29 @@ class AnimeSyncManager:
         success = 0
         errors = []
         
+        status_map = {
+            "watching": "CURRENT",
+            "completed": "COMPLETED",
+            "on_hold": "PAUSED",
+            "dropped": "DROPPED",
+            "plan_to_watch": "PLANNING",
+            "planning": "PLANNING",
+        }
+
         for entry in entries:
             try:
-                # TODO: Implement AniList update logic
-                # This is a placeholder for the actual AniList update API call
+                mapped_status = status_map.get((entry.status or "").lower())
+                self.anilist_client.save_list_entry(
+                    title=entry.title,
+                    status=mapped_status,
+                    score=entry.score,
+                    progress=entry.episodes_watched,
+                )
                 success += 1
+                time.sleep(0.2)  # gentle pacing
             except Exception as e:
                 errors.append(f"Failed to sync {entry.title}: {str(e)}")
-                time.sleep(1)  # Rate limiting
+                time.sleep(0.5)  # Rate limiting
 
         return {"success": success, "errors": errors}
 
@@ -131,7 +163,7 @@ class AnimeSyncManager:
             for json_entry in json_entries:
                 entries.append(AnimeEntry(
                     title=json_entry.name,
-                    status="plan_to_read",  # Default status for imported entries
+                    status="planning",  # Default status works for both platforms
                     score=None,
                     episodes_watched=0,
                     total_episodes=None

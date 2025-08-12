@@ -72,6 +72,23 @@ cat credentials.env
 
 You should see: `MAL_CLIENT_ID=your_client_id_here`
 
+### 5. (Optional, required for write) Add Tokens for Write Operations
+To sync data by writing to target platforms, add tokens below to `credentials.env`:
+
+```
+# Required for writing to MAL lists
+MAL_ACCESS_TOKEN=your_mal_oauth_access_token
+
+# Required for writing to AniList lists
+ANILIST_ACCESS_TOKEN=your_anilist_oauth_access_token
+```
+
+How to obtain tokens:
+- MyAnimeList: MAL uses OAuth2 (PKCE). Create an app at https://myanimelist.net/apiconfig and complete the OAuth flow to obtain an access token. Use the token in `MAL_ACCESS_TOKEN`.
+- AniList: Create an app at https://anilist.co/settings/developer. Complete the OAuth2 flow to obtain an access token and set `ANILIST_ACCESS_TOKEN`.
+
+Note: Read operations work with just `MAL_CLIENT_ID`. Write operations require the corresponding access token for the target platform.
+
 ## Deployment Options
 
 ### Local Development/Testing
