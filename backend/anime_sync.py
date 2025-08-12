@@ -1,4 +1,4 @@
-from .models import AnimeEntry, PlatformList, SyncConfig, SyncResult
+from .models import AnimeEntry, PlatformList, SyncConfig, SyncResult, JSONAnimeEntry
 from .api_clients import MALClient, AniListClient
 from typing import List, Dict, Optional
 import time
@@ -114,18 +114,27 @@ class AnimeSyncManager:
         except Exception as e:
             raise Exception(f"Sync failed: {str(e)}")
 
-    def sync_from_json(self, json_data: Dict, config: SyncConfig) -> SyncResult:
-        """Sync anime entries from JSON data."""
+    def sync_from_json(self, json_data: List[Dict], config: SyncConfig) -> SyncResult:
+        """Sync anime entries from JSON data with the user's structure."""
         try:
-            # Convert JSON data to AnimeEntry objects
+            # Convert JSON data to JSONAnimeEntry objects first
+            json_entries = []
+            for item in json_data:
+                json_entries.append(JSONAnimeEntry(
+                    name=item["name"],
+                    mal=item["mal"],
+                    al=item["al"]
+                ))
+
+            # Convert to AnimeEntry objects for syncing
             entries = []
-            for item in json_data.get("anime_list", []):
+            for json_entry in json_entries:
                 entries.append(AnimeEntry(
-                    title=item["title"],
-                    status=item["status"],
-                    score=item.get("score"),
-                    episodes_watched=item.get("episodes_watched"),
-                    total_episodes=item.get("total_episodes")
+                    title=json_entry.name,
+                    status="plan_to_read",  # Default status for imported entries
+                    score=None,
+                    episodes_watched=0,
+                    total_episodes=None
                 ))
 
             # Sync based on target platform

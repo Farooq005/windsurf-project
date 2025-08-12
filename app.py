@@ -56,13 +56,38 @@ def main():
             st.error(f"Error during sync: {str(e)}")
     
     # JSON upload processing
-    if uploaded_file:
-        try:
-            json_data = json.load(uploaded_file)
-            st.json(json_data)
-            # TODO: Add JSON processing logic
-        except json.JSONDecodeError:
-            st.error("Invalid JSON file")
+    if uploaded_file and st.button("Process JSON File"):
+        if not mal_username or not anilist_username:
+            st.error("Please provide both usernames for JSON processing")
+        else:
+            try:
+                json_data = json.load(uploaded_file)
+                st.success(f"Loaded {len(json_data)} entries from JSON file")
+                
+                # Create sync config for JSON processing
+                sync_config = SyncConfig(
+                    mal_username=mal_username,
+                    anilist_username=anilist_username,
+                    target_platform=target_platform
+                )
+                
+                # Process JSON data
+                with st.spinner("Processing JSON entries..."):
+                    result = sync_manager.sync_from_json(json_data, sync_config)
+                
+                # Display results
+                st.success("JSON processing completed!")
+                st.json({
+                    "entries_processed": len(json_data),
+                    "success_count": result.success_count,
+                    "error_count": result.error_count,
+                    "errors": result.errors
+                })
+                
+            except json.JSONDecodeError:
+                st.error("Invalid JSON file")
+            except Exception as e:
+                st.error(f"Error processing JSON: {str(e)}")
 
 if __name__ == "__main__":
     main()

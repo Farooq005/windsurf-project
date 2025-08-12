@@ -2,8 +2,13 @@ import requests
 from typing import List, Dict, Optional
 from .models import AnimeEntry, PlatformList
 import time
+import os
+from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Load environment variables from credentials.env
+load_dotenv('credentials.env')
 
 class BaseAPIClient:
     def __init__(self):
@@ -24,7 +29,9 @@ class MALClient(BaseAPIClient):
     
     def __init__(self):
         super().__init__()
-        self.client_id = "YOUR_MAL_CLIENT_ID"  # TODO: Move to environment variable
+        self.client_id = os.getenv('MAL_CLIENT_ID')
+        if not self.client_id:
+            raise ValueError("MAL_CLIENT_ID not found in environment variables")
         
     def get_user_list(self, username: str) -> PlatformList:
         url = f"{self.BASE_URL}/users/{username}/animelist"
