@@ -2,6 +2,13 @@
 import streamlit as st
 from typing import Dict, Any, Optional, List, Callable
 
+def get_platform_icon(platform: str) -> str:
+    icons = {
+        "MyAnimeList": "📚",
+        "AniList": "📱"
+    }
+    return icons.get(platform, "")
+
 # Custom CSS for the app
 def load_css():
     st.markdown("""
@@ -62,34 +69,15 @@ def show_message(message: str, type: str = "info"):
     else:
         st.info(message)
 
-def auth_status_component():
-    """Display authentication status component."""
-    status = st.session_state.get('auth_status', {})
-    
-    with st.sidebar:
-        st.subheader("Authentication Status")
-        
-        # MAL Status
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**MAL:**")
-        with col2:
-            if status.get('mal_authenticated'):
-                st.success(f"✅ {status.get('mal_username', 'Connected')}")
-            else:
-                st.warning("❌ Not connected")
-        
-        # AniList Status
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**AniList:**")
-        with col2:
-            if status.get('anilist_authenticated'):
-                st.success(f"✅ {status.get('anilist_username', 'Connected')}")
-            else:
-                st.warning("❌ Not connected")
-        
-        st.markdown("---")
+def auth_status_component(platform: str, is_authed: bool, username: Optional[str] = None):
+    """Display authentication status for a single platform."""
+    icon = get_platform_icon(platform)
+    st.markdown(f"<div class='platform-card {platform.lower()}-card'>", unsafe_allow_html=True)
+    st.markdown(f"<h4>{icon} {platform}</h4>", unsafe_allow_html=True)
+    if is_authed:
+        st.success(f"Authenticated as **{username}**")
+    else:
+        st.warning("Not Authenticated")
 
 def sync_config_component() -> Dict[str, Any]:
     """Render sync configuration component."""

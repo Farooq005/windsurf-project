@@ -144,14 +144,6 @@ def display_sync_result(result: Dict[str, Any]) -> None:
                         "Score": item.get('score', '-')
                     } for item in anilist_only]), use_container_width=True)
 
-def get_platform_icon(platform: str) -> str:
-    """Get platform icon."""
-    icons = {
-        "MyAnimeList": "📚",
-        "AniList": "📱"
-    }
-    return icons.get(platform, "")
-
 def main():
     st.sidebar.title("AniSync")
     
@@ -182,6 +174,7 @@ def render_sync_page():
     # MyAnimeList Authentication Column
     with col1:
         auth_status_component("MyAnimeList", mal_authed, st.session_state.get("mal_username"))
+        st.markdown("</div>", unsafe_allow_html=True)
         if not mal_authed:
             if st.button("Login with MyAnimeList", key="mal_login"):
                 init_mal_auth()
@@ -192,6 +185,7 @@ def render_sync_page():
     # AniList Authentication Column
     with col2:
         auth_status_component("AniList", anilist_authed, st.session_state.get("anilist_username"))
+        st.markdown("</div>", unsafe_allow_html=True)
         if not anilist_authed:
             if st.button("Login with AniList", key="anilist_login"):
                 init_anilist_auth()
