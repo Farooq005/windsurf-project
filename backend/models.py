@@ -23,8 +23,13 @@ class SyncConfig(BaseModel):
     target_platform: str
 
 class SyncResult(BaseModel):
-    intersection: List[AnimeEntry]
-    differences: Dict[str, List[AnimeEntry]]
-    success_count: int
-    error_count: int
-    errors: List[str]
+    """Represents the result of a sync operation."""
+    intersection: List[AnimeEntry] = Field(default_factory=list, description="Entries that exist in both platforms")
+    differences: Dict[str, List[AnimeEntry]] = Field(default_factory=dict, description="Differences between platforms")
+    success_count: int = Field(0, description="Number of successful sync operations")
+    error_count: int = Field(0, description="Number of failed sync operations")
+    errors: List[str] = Field(default_factory=list, description="List of error messages")
+    sync_id: Optional[str] = Field(None, description="Unique identifier for this sync operation")
+    timestamp: Optional[str] = Field(None, description="ISO timestamp when the sync completed")
+    warnings: List[str] = Field(default_factory=list, description="List of non-critical warnings")
+    stats: Dict[str, Any] = Field(default_factory=dict, description="Additional statistics about the sync")
