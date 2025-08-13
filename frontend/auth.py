@@ -125,35 +125,38 @@ def handle_auth_callback() -> None:
             st.error(f"Error handling AniList callback: {e}")
 
 
-def logout() -> None:
-    """Log out the current user."""
+def logout(platform: Optional[str] = None) -> None:
+    """Log out the current user from a specific platform or all."""
     try:
-        response = requests.post(f"{API_BASE_URL}/auth/logout", cookies=st.session_state.get('cookies', {}))
+        # The backend endpoint should handle platform-specific logout
+        response = requests.post(f"{API_BASE_URL}/auth/logout", json={'platform': platform}, cookies=st.session_state.get('cookies', {}))
         if response.status_code == 200:
-            st.session_state.update({
-                'authenticated': False,
-                'mal_authenticated': False,
-                'anilist_authenticated': False,
-                'mal_username': None,
-                'anilist_username': None,
-                'access_tokens': {}
-            })
+            if platform == 'mal' or platform is None:
+                st.session_state['mal_authenticated'] = False
+                st.session_state['mal_username'] = None
+                if 'mal' in st.session_state.get('access_tokens', {}):
+                    del st.session_state['access_tokens']['mal']
+            
+            if platform == 'anilist' or platform is None:
+                st.session_state['anilist_authenticated'] = False
+                st.session_state['anilist_username'] = None
+                if 'anilist' in st.session_state.get('access_tokens', {}):
+                    del st.session_state['access_tokens']['anilist']
+
+            # Update overall authenticated status
+            st.session_state['authenticated'] = st.session_state['mal_authenticated'] or st.session_state['anilist_authenticated']
+            
+            st.success(f"Successfully logged out from {platform.upper() if platform else 'all services'}.")
             st.experimental_rerun()
         else:
             st.error(f"Failed to log out: {response.text}")
     except Exception as e:
         st.error(f"Error logging out: {e}")
 
-def get_auth_status() -> Dict[str, Any]:
-    """Get the current authentication status."""
+def get_auth_status() -> tuple[bool, bool]:
+    """Get the current authentication status for MAL and AniList."""
     state = get_session_state()
-    return {
-        'authenticated': state['authenticated'],
-        'mal_authenticated': state['mal_authenticated'],
-        'anilist_authenticated': state['anilist_authenticated'],
-        'mal_username': state['mal_username'],
-        'anilist_username': state['anilist_username']
-    }
+    return state['mal_authenticated'], state['anilist_authenticated']
 
 def require_auth(platform: str = 'any') -> bool:
     """

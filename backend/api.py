@@ -1,11 +1,13 @@
 """API endpoints for the Anime List Sync application."""
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict, Optional
 import os
+import json
+from datetime import datetime
 
 from .auth import (
     get_mal_auth_url,
@@ -13,6 +15,9 @@ from .auth import (
     get_anilist_auth_url,
     handle_anilist_callback
 )
+from .anime_sync import AnimeSyncManager, SyncDirection
+from .models import SyncConfig, SyncResult, AnimeEntry
+from .api_clients import MALClient, AniListClient
 
 app = FastAPI(
     title="Anime List Sync API",
@@ -167,6 +172,124 @@ async def logout(request: Request):
     response = JSONResponse(content={"success": True})
     response.delete_cookie("session_id")
     return response
+
+@app.post("/api/sync", response_model=SyncResult)
+async def sync_lists_endpoint(config: SyncConfig, direction: SyncDirection, request: Request):
+    """Endpoint to trigger the anime list synchronization."""
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in user_sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session_data = user_sessions[session_id]
+    mal_token = session_data.get("mal", {}).get("access_token")
+    anilist_token = session_data.get("anilist", {}).get("access_token")
+
+    if not mal_token or not anilist_token:
+        raise HTTPException(status_code=401, detail="Missing required authentication for sync")
+
+    try:
+        mal_client = MALClient()
+        anilist_client = AniListClient()
+        sync_manager = AnimeSyncManager(mal_client, anilist_client)
+
+        result = await sync_manager.sync_lists(
+            config=config,
+            direction=direction,
+            mal_token=mal_token,
+            anilist_token=anilist_token
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+@app.get("/api/export")
+async def export_lists(request: Request):
+    """Export user's anime lists to a JSON file."""
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in user_sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session_data = user_sessions[session_id]
+    mal_token = session_data.get("mal", {}).get("access_token")
+    anilist_token = session_data.get("anilist", {}).get("access_token")
+
+    if not mal_token or not anilist_token:
+        raise HTTPException(status_code=401, detail="Missing required authentication")
+
+    try:
+        mal_client = MALClient()
+        anilist_client = AniListClient()
+
+        mal_list = await mal_client.get_anime_list(session_data["mal"]["username"], mal_token)
+        anilist_list = await anilist_client.get_anime_list(session_data["anilist"]["username"], anilist_token)
+
+        export_data = {
+            "myanimelist": [entry.dict() for entry in mal_list],
+            "anilist": [entry.dict() for entry in anilist_list],
+            "exported_at": datetime.now().isoformat()
+        }
+
+        return JSONResponse(
+            content=export_data,
+            headers={"Content-Disposition": f"attachment; filename=anisync_export_{datetime.now().strftime('%Y%m%d')}.json"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+@app.post("/api/import")
+async def import_lists(request: Request, file: UploadFile = File(...)):
+    """Import user's anime lists from a JSON file."""
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in user_sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session_data = user_sessions[session_id]
+    mal_token = session_data.get("mal", {}).get("access_token")
+    anilist_token = session_data.get("anilist", {}).get("access_token")
+
+    if not mal_token or not anilist_token:
+        raise HTTPException(status_code=401, detail="Missing required authentication for import")
+
+    try:
+        contents = await file.read()
+        import_data = json.loads(contents)
+
+        mal_client = MALClient()
+        anilist_client = AniListClient()
+
+        mal_entries = import_data.get("myanimelist", [])
+        anilist_entries = import_data.get("anilist", [])
+        
+        errors = []
+        success_count = 0
+
+        # Import to MAL
+        for entry_data in mal_entries:
+            try:
+                entry = AnimeEntry(**entry_data)
+                await mal_client.save_list_entry(session_data["mal"]["username"], entry, mal_token)
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to import '{entry_data.get('title')}' to MAL: {e}")
+
+        # Import to AniList
+        for entry_data in anilist_entries:
+            try:
+                entry = AnimeEntry(**entry_data)
+                await anilist_client.save_list_entry(session_data["anilist"]["username"], entry, anilist_token)
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to import '{entry_data.get('title')}' to AniList: {e}")
+
+        return {
+            "success": True,
+            "message": f"Import completed with {success_count} successes and {len(errors)} errors.",
+            "errors": errors
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
 # Mount static files for the frontend
 app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")

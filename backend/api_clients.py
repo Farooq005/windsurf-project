@@ -103,7 +103,7 @@ class MALClient(BaseAPIClient):
         data = {
             'status': entry.status,
             'score': entry.score,
-            'num_watched_episodes': entry.episodes_watched
+            'num_episodes_watched': entry.episodes_watched
         }
         data = {k: v for k, v in data.items() if v is not None}
         headers = {

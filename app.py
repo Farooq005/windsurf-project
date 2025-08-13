@@ -21,9 +21,8 @@ from frontend.auth import (
 )
 
 # Import backend modules
-from backend.models import SyncConfig, SyncResult, SyncDifference
-from backend.anime_sync import AnimeSyncManager, SyncDirection
-from backend.api_clients import MALClient, AniListClient
+from backend.models import SyncConfig, SyncDifference
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,12 +37,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # Initialize session state
 get_session_state()
 
-# Initialize API clients with empty tokens (will be set during auth)
-mal_client = MALClient()
-anilist_client = AniListClient()
 
-# Initialize sync manager
-sync_manager = AnimeSyncManager(mal_client, anilist_client)
 
 # Configure page
 st.set_page_config(
@@ -107,46 +101,47 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def display_sync_result(result: SyncResult) -> None:
+def display_sync_result(result: Dict[str, Any]) -> None:
     """Display sync results in a user-friendly way."""
-    if result.success_count > 0:
+    if result.get("success_count", 0) > 0:
         st.markdown(f"""
         <div class="success-box">
             <h4>✅ Sync Completed Successfully</h4>
-            <p>Successfully synced {result.success_count} items.</p>
+            <p>Successfully synced {result.get("success_count")} items.</p>
         </div>
         """, unsafe_allow_html=True)
     
-    if result.error_count > 0:
-        with st.expander(f"❌ {result.error_count} Errors (Click to view)"):
-            for error in result.errors:
+    if result.get("error_count", 0) > 0:
+        with st.expander(f"❌ {result.get('error_count')} Errors (Click to view)"):
+            for error in result.get("errors", []):
                 st.error(error)
     
     # Show differences
-    if result.differences:
+    if result.get("differences"):
         with st.expander("📊 Sync Details"):
-            mal_only = result.differences.get("mal_only", [])
-            anilist_only = result.differences.get("anilist_only", [])
+            differences = result.get("differences", {})
+            mal_only = differences.get("mal_only", [])
+            anilist_only = differences.get("anilist_only", [])
             
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Only in MAL", len(mal_only))
                 if mal_only:
                     st.dataframe(pd.DataFrame([{
-                        "Title": item.title,
-                        "Status": item.status,
-                        "Progress": f"{item.episodes_watched or 0}/{item.total_episodes or '?'}",
-                        "Score": item.score or "-"
+                        "Title": item.get('title'),
+                        "Status": item.get('status'),
+                        "Progress": f"{item.get('episodes_watched', 0)}/{item.get('total_episodes', '?')}",
+                        "Score": item.get('score', '-')
                     } for item in mal_only]), use_container_width=True)
             
             with col2:
                 st.metric("Only in AniList", len(anilist_only))
                 if anilist_only:
                     st.dataframe(pd.DataFrame([{
-                        "Title": item.title,
-                        "Status": item.status,
-                        "Progress": f"{item.episodes_watched or 0}/{item.total_episodes or '?'}",
-                        "Score": item.score or "-"
+                        "Title": item.get('title'),
+                        "Status": item.get('status'),
+                        "Progress": f"{item.get('episodes_watched', 0)}/{item.get('total_episodes', '?')}",
+                        "Score": item.get('score', '-')
                     } for item in anilist_only]), use_container_width=True)
 
 def get_platform_icon(platform: str) -> str:
@@ -155,20 +150,7 @@ def get_platform_icon(platform: str) -> str:
         "MyAnimeList": "📚",
         "AniList": "📱"
     }
-    return icons.get(platform, "📋")
-
-# Initialize session state
-if 'sync_history' not in st.session_state:
-    st.session_state.sync_history = []
-if 'last_sync_result' not in st.session_state:
-    st.session_state.last_sync_result = None
-
-# Initialize API clients and sync manager
-@st.cache_resource
-def get_sync_manager():
-    return AnimeSyncManager(MALClient(), AniListClient())
-
-sync_manager = get_sync_manager()
+    return icons.get(platform, "")
 
 def main():
     st.sidebar.title("AniSync")
@@ -177,22 +159,20 @@ def main():
     with st.sidebar:
         selected = option_menu(
             menu_title=None,
-            options=["Sync Anime", "Sync History", "Settings", "About"],
-            icons=["arrow-repeat", "clock-history", "gear", "info-circle"],
+            options=["Sync Anime", "Settings", "About"],
+            icons=["arrow-repeat", "gear", "info-circle"],
             default_index=0,
         )
     
     if selected == "Sync Anime":
         render_sync_page()
-    elif selected == "Sync History":
-        render_sync_history()
     elif selected == "Settings":
         render_settings()
     else:  # About
         render_about()
 
 def render_sync_page():
-    st.title("🔄 AniSync")
+    st.title(" AniSync")
 
     # Check authentication status
     mal_authed, anilist_authed = get_auth_status()
@@ -207,7 +187,7 @@ def render_sync_page():
                 init_mal_auth()
         else:
             if st.button("Logout from MyAnimeList", key="mal_logout"):
-                logout("mal")
+                logout('mal')
 
     # AniList Authentication Column
     with col2:
@@ -217,7 +197,7 @@ def render_sync_page():
                 init_anilist_auth()
         else:
             if st.button("Logout from AniList", key="anilist_logout"):
-                logout("anilist")
+                logout('anilist')
 
     # Handle auth callback centrally after rendering buttons
     handle_auth_callback()
@@ -225,12 +205,12 @@ def render_sync_page():
     # If both are authenticated, show sync options
     if mal_authed and anilist_authed:
         st.markdown("---")
-        st.header("⚙️ Sync Options")
+        st.header(" Sync Options")
 
         direction_map = {
-            "Bidirectional": SyncDirection.BIDIRECTIONAL,
-            "MAL to AniList": SyncDirection.MAL_TO_ANILIST,
-            "AniList to MAL": SyncDirection.ANILIST_TO_MAL
+            "Bidirectional": "bidirectional",
+            "MAL to AniList": "mal_to_anilist",
+            "AniList to MAL": "anilist_to_mal"
         }
 
         sync_direction_label = st.radio(
@@ -240,40 +220,36 @@ def render_sync_page():
             help="Choose which direction to sync your lists"
         )
 
-        if st.button("🔄 Start Sync", type="primary", use_container_width=True, key="sync_button"):
-            sync_config = SyncConfig(
-                mal_username=st.session_state.get("mal_username"),
-                anilist_username=st.session_state.get("anilist_username"),
-                target_platform="MyAnimeList"  # This could be made configurable
-            )
-
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            try:
-                status_text.info("🔍 Fetching your anime lists...")
-                progress_bar.progress(25)
-
-                result = sync_manager.sync_lists(
-                    config=sync_config,
-                    direction=direction_map[sync_direction_label]
-                )
-
-                st.session_state.last_sync_result = result
-                st.session_state.sync_history.insert(0, {
-                    "timestamp": datetime.now().isoformat(),
-                    "result": result,
-                    "config": sync_config.dict()
-                })
-
-                progress_bar.progress(100)
-                status_text.success("✅ Sync completed successfully!")
-                st.rerun()
-
-            except Exception as e:
-                progress_bar.progress(0)
-                status_text.error(f"❌ Error during sync: {str(e)}")
-                logger.exception("Sync failed")
+        if st.button(" Start Sync", type="primary", use_container_width=True, key="sync_button"):
+            with st.spinner("Synchronizing lists..."):
+                try:
+                    payload = {
+                        "config": {
+                            "mal_username": st.session_state.get("mal_username"),
+                            "anilist_username": st.session_state.get("anilist_username"),
+                            "target_platform": "MyAnimeList"
+                        },
+                        "direction": direction_map[sync_direction_label]
+                    }
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/sync",
+                        json=payload,
+                        cookies=st.session_state.get('cookies', {}),
+                        timeout=300 # 5 minutes timeout for sync
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    st.session_state.last_sync_result = result
+                    st.rerun()
+                except requests.exceptions.HTTPError as e:
+                    try:
+                        error_detail = e.response.json().get("detail", e.response.text)
+                    except json.JSONDecodeError:
+                        error_detail = e.response.text
+                    st.error(f"Sync failed: {error_detail}")
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+                    logger.exception("Sync failed")
 
     else:
         st.info("Please log in to both MyAnimeList and AniList to enable syncing.")
@@ -285,36 +261,57 @@ def render_sync_page():
 
 def render_sync_history():
     st.title("📜 Sync History")
-    
-    if not st.session_state.sync_history:
-        st.info("No sync history available. Perform a sync to see history here.")
-        return
-    
-    for i, entry in enumerate(st.session_state.sync_history):
-        with st.expander(f"Sync at {entry['timestamp']}"):
-            st.json(entry)
+    st.info("Sync history is not available in this version.")
 
 def render_settings():
     st.title("⚙️ Settings")
     
-    st.header("API Configuration")
-    st.markdown("""
-    ### MyAnimeList API
-    - [Get MAL API Key](https://myanimelist.net/apiconfig)
-    - Required scopes: `write`
-    
-    ### AniList API
-    - [Get AniList API Key](https://anilist.co/api/v2/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=token)
-    - Required scopes: `write`
-    """)
+
     
     st.header("Application Settings")
     auto_sync = st.checkbox("Enable auto-sync", value=True,
                           help="Automatically sync when changes are detected")
     
-    if st.button("Clear Sync History", type="secondary"):
-        st.session_state.sync_history = []
-        st.success("Sync history cleared!")
+    
+
+    st.header("Data Management")
+
+    # Export functionality
+    if st.button("Export Lists to JSON"):
+        try:
+            response = requests.get(f"{API_BASE_URL}/api/export", cookies=st.session_state.get('cookies', {}))
+            response.raise_for_status()
+            st.session_state['export_data'] = response.json()
+            st.success("Export data generated! Click the download button below.")
+        except Exception as e:
+            st.error(f"Failed to export data: {e}")
+
+    if 'export_data' in st.session_state and st.session_state['export_data']:
+        st.download_button(
+            label="Download JSON Export",
+            data=json.dumps(st.session_state['export_data'], indent=2),
+            file_name=f"anisync_export_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json",
+            on_click=lambda: st.session_state.pop('export_data', None)  # Clear after download
+        )
+
+    # Import functionality
+    uploaded_file = st.file_uploader("Import Lists from JSON", type="json")
+    if uploaded_file is not None:
+        if st.button("Process Import File"):
+            with st.spinner("Importing lists..."):
+                try:
+                    files = {'file': (uploaded_file.name, uploaded_file, 'application/json')}
+                    response = requests.post(f"{API_BASE_URL}/api/import", files=files, cookies=st.session_state.get('cookies', {}))
+                    response.raise_for_status()
+                    result = response.json()
+                    st.success(result.get("message", "Import completed!"))
+                    if result.get("errors"):
+                        with st.expander("View import errors"):
+                            for error in result["errors"]:
+                                st.error(error)
+                except Exception as e:
+                    st.error(f"Failed to import data: {e}")
 
 def render_about():
     st.title("ℹ️ About AniSync")
@@ -331,10 +328,10 @@ def render_about():
     - 🔐 Secure authentication
     
     ### How to Use
-    1. Enter your MAL and AniList usernames
-    2. Provide API access tokens (get them from the links in Settings)
-    3. Choose sync options
-    4. Click "Start Sync"
+    1. Go to the 'Sync Anime' page.
+    2. Click the authentication buttons for MyAnimeList and AniList.
+    3. Follow the on-screen prompts to log in and authorize the application.
+    4. Once authenticated, choose your sync options and click 'Start Sync'.
     
     ### Privacy
     - Your data never leaves your browser

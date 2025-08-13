@@ -1,4 +1,4 @@
-from .models import AnimeEntry, PlatformList, SyncConfig, SyncResult, JSONAnimeEntry, SyncDifference
+from .models import AnimeEntry, PlatformList, SyncConfig, SyncResult, SyncDifference
 from .api_clients import MALClient, AniListClient
 from typing import Dict, List, Optional, Tuple, Any, Union
 from datetime import datetime
@@ -32,7 +32,6 @@ class AnimeSyncManager:
         """Initialize with optional API clients."""
         self.mal_client = mal_client or MALClient()
         self.anilist_client = anilist_client or AniListClient()
-        self.sync_history: List[SyncResult] = []
         self.sync_staging = {}  # Store staging data between sync operations
         self.max_retries = 3
         self.retry_delay = 2  # Initial delay in seconds
@@ -203,7 +202,7 @@ class AnimeSyncManager:
 
         return {"success": success_count, "errors": errors}
 
-    def sync(self, config: SyncConfig, direction: SyncDirection = SyncDirection.BIDIRECTIONAL, mal_token: Optional[str] = None, anilist_token: Optional[str] = None) -> SyncResult:
+    async def sync_lists(self, config: SyncConfig, direction: SyncDirection = SyncDirection.BIDIRECTIONAL, mal_token: Optional[str] = None, anilist_token: Optional[str] = None) -> SyncResult:
         """
         Synchronize anime lists between MAL and AniList.
         
@@ -279,100 +278,3 @@ class AnimeSyncManager:
         except Exception as e:
             logger.error(f"Sync failed: {str(e)}", exc_info=True)
             raise Exception(f"Sync failed: {str(e)}")
-
-    def sync_from_json(self, json_data: List[Dict], config: SyncConfig) -> SyncResult:
-        """
-        Sync anime entries from JSON data with the user's structure.
-        
-        Args:
-            json_data: List of dictionaries containing anime data
-            config: Sync configuration including target platform
-            
-        Returns:
-            SyncResult: Result of the sync operation
-            
-        Raises:
-            Exception: If sync fails
-        """
-        sync_start = datetime.utcnow()
-        sync_id = f"json_import_{int(sync_start.timestamp())}"
-        
-        try:
-            logger.info(f"Starting JSON import for {len(json_data)} entries to {config.target_platform}")
-            
-            # Convert JSON data to AnimeEntry objects
-            entries = []
-            for item in json_data:
-                try:
-                    # Handle different JSON structures
-                    if "name" in item and "mal" in item and "al" in item:
-                        # New format with name, mal, al fields
-                        entry = JSONAnimeEntry(
-                            name=item["name"],
-                            mal=item["mal"],
-                            al=item["al"]
-                        )
-                        title = entry.name
-                    elif "title" in item:
-                        # Direct AnimeEntry-like format
-                        title = item["title"]
-                    else:
-                        logger.warning(f"Skipping invalid JSON entry: {item}")
-                        continue
-                        
-                    entries.append(AnimeEntry(
-                        title=title,
-                        status=item.get("status", "planning"),
-                        score=item.get("score"),
-                        episodes_watched=item.get("episodes_watched", 0),
-                        total_episodes=item.get("total_episodes")
-                    ))
-                except Exception as e:
-                    logger.error(f"Error processing JSON entry {item}: {str(e)}")
-            
-            logger.info(f"Processed {len(entries)} valid entries from JSON")
-            
-            # Sync based on target platform
-            if config.target_platform.lower() == "myanimelist":
-                result = self._sync_to_mal(config.mal_username, entries)
-            else:  # AniList
-                result = self._sync_to_anilist(config.anilist_username, entries)
-            
-            sync_end = datetime.utcnow()
-            
-            # Store sync history
-            sync_entry = {
-                "id": sync_id,
-                "type": "json_import",
-                "start_time": sync_start.isoformat(),
-                "end_time": sync_end.isoformat(),
-                "duration_seconds": (sync_end - sync_start).total_seconds(),
-                "target_platform": config.target_platform,
-                "entries_processed": len(entries),
-                "success_count": result.get("success", 0),
-                "error_count": len(result.get("errors", [])),
-                "errors": result.get("errors", [])
-            }
-            self.sync_history.append(sync_entry)
-            
-            # Keep only the last 100 syncs in history
-            if len(self.sync_history) > 100:
-                self.sync_history = self.sync_history[-100:]
-            
-            logger.info(f"JSON import completed: {result.get('success', 0)} succeeded, "
-                       f"{len(result.get('errors', []))} failed")
-            
-            return SyncResult(
-                intersection=[],
-                differences={"json_entries": entries},
-                success_count=result.get("success", 0),
-                error_count=len(result.get("errors", [])),
-                errors=result.get("errors", []),
-                sync_id=sync_id,
-                timestamp=datetime.utcnow().isoformat()
-            )
-
-        except Exception as e:
-            error_msg = f"JSON sync failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            raise Exception(error_msg) from e
