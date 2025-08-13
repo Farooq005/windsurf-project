@@ -3,6 +3,7 @@ import os
 import base64
 import json
 import secrets
+import logging
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlencode, parse_qs, urlparse
 
@@ -16,6 +17,9 @@ def get_required_env_var(name: str) -> str:
     if not value:
         raise ValueError(f"Required environment variable {name} is not set")
     return value
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Load and validate environment variables
 try:
