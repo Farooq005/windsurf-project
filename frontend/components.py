@@ -1,6 +1,9 @@
 """UI components for the Streamlit app."""
 import streamlit as st
 from typing import Dict, Any, Optional, List, Callable
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_platform_icon(platform: str) -> str:
     icons = {
@@ -71,13 +74,17 @@ def show_message(message: str, type: str = "info"):
 
 def auth_status_component(platform: str, is_authed: bool, username: Optional[str] = None):
     """Display authentication status for a single platform."""
-    icon = get_platform_icon(platform)
-    st.markdown(f"<div class='platform-card {platform.lower()}-card'>", unsafe_allow_html=True)
-    st.markdown(f"<h4>{icon} {platform}</h4>", unsafe_allow_html=True)
-    if is_authed:
-        st.success(f"Authenticated as **{username}**")
-    else:
-        st.warning("Not Authenticated")
+    try:
+        icon = get_platform_icon(platform)
+        st.markdown(f"<div class='platform-card {platform.lower()}-card'>", unsafe_allow_html=True)
+        st.markdown(f"<h4>{icon} {platform}</h4>", unsafe_allow_html=True)
+        if is_authed:
+            st.success(f"Authenticated as **{username}**")
+        else:
+            st.warning("Not Authenticated")
+    except Exception as e:
+        logger.error(f"Error rendering auth status for {platform}: {str(e)}")
+        st.error(f"Failed to display authentication status for {platform}")
 
 def sync_config_component() -> Dict[str, Any]:
     """Render sync configuration component."""
