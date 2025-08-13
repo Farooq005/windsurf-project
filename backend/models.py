@@ -22,6 +22,12 @@ class SyncConfig(BaseModel):
     anilist_username: str
     target_platform: str
 
+class SyncDifference(BaseModel):
+    """Represents the differences between two anime lists."""
+    mal_only: List[AnimeEntry] = Field(default_factory=list)
+    anilist_only: List[AnimeEntry] = Field(default_factory=list)
+    intersection: List[AnimeEntry] = Field(default_factory=list)
+
 class SyncResult(BaseModel):
     """Represents the result of a sync operation."""
     intersection: List[AnimeEntry] = Field(default_factory=list, description="Entries that exist in both platforms")
