@@ -7,6 +7,7 @@ from datetime import datetime
 import logging
 import requests
 from typing import Dict, Any, Optional, List
+import pandas as pd
 
 # Import frontend components
 from frontend.components import (

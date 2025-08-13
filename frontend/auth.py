@@ -1,4 +1,4 @@
-""
+"""
 Authentication components for the Streamlit UI.
 """
 import streamlit as st
@@ -100,7 +100,28 @@ def handle_auth_callback() -> None:
         except Exception as e:
             st.error(f"Error handling MAL callback: {e}")
     
-    # Handle AniList callback (similar to MAL but with AniList endpoints)
+    # Handle AniList callback
+    # This part is tricky because both callbacks use 'code' and 'state'.
+    # We need a way to distinguish them. We assume if the 'state' is not in our MAL records,
+    # it must be for AniList. This relies on the backend storing state separately.
+    elif 'code' in query_params and 'state' in query_params and 'mal_auth_url' not in st.session_state:
+        try:
+            response = requests.get(
+                f"{API_BASE_URL}/auth/anilist/callback",
+                params={"code": query_params['code'][0], "state": query_params['state'][0]}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    st.success("Successfully authenticated with AniList!")
+                    st.experimental_set_query_params()  # Clear the URL parameters
+                    st.experimental_rerun()
+                else:
+                    st.error(f"Failed to authenticate with AniList: {data.get('error')}")
+            else:
+                st.error(f"Failed to authenticate with AniList: {response.text}")
+        except Exception as e:
+            st.error(f"Error handling AniList callback: {e}")
 
 
 def logout() -> None:
