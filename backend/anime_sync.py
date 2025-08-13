@@ -127,130 +127,91 @@ class AnimeSyncManager:
             "anilist_only": anilist_only
         }
 
-    def _sync_to_mal(self, mal_username: str, entries: List[AnimeEntry]) -> Dict:
+    def _sync_to_mal(self, mal_username: str, entries: List[AnimeEntry], token: str) -> Dict:
         """
         Sync entries to MyAnimeList with retry logic.
         
         Args:
             mal_username: MAL username
             entries: List of AnimeEntry objects to sync
-            
+            token: The OAuth2 access token for MAL.
+
         Returns:
             Dict: Results with success/error counts and messages
         """
-        success = 0
+        success_count = 0
         errors = []
         
-        logger.info(f"Starting sync to MAL for {len(entries)} entries")
-        
         for entry in entries:
-            last_error = None
-            
             for attempt in range(1, self.max_retries + 1):
                 try:
-                    self.mal_client.save_list_entry(
-                        title=entry.title,
-                        status=entry.status,
-                        score=entry.score,
-                        progress=entry.episodes_watched,
-                    )
-                    success += 1
-                    logger.info(f"Successfully synced '{entry.title}' to MAL")
-                    break  # Success, exit retry loop
-                    
-                except Exception as e:
-                    last_error = str(e)
-                    if attempt < self.max_retries:
-                        delay = self._calculate_jittered_delay(attempt)
-                        logger.warning(
-                            f"Attempt {attempt} failed for '{entry.title}'. "
-                            f"Retrying in {delay:.1f}s. Error: {last_error}"
-                        )
-                        time.sleep(delay)
+                    self.mal_client.save_list_entry(mal_username, entry, token)
+                    success_count += 1
+                    break  # Success, move to next entry
+                except HTTPException as e:
+                    if e.status_code in [429, 500, 502, 503, 504]:
+                        logger.warning(f"Attempt {attempt}/{self.max_retries} failed for {entry.title} on MAL: {e.detail}. Retrying...")
+                        if attempt < self.max_retries:
+                            time.sleep(self._calculate_jittered_delay(attempt))
+                        else:
+                            errors.append(f"Failed to sync {entry.title} to MAL after {self.max_retries} attempts: {e.detail}")
                     else:
-                        error_msg = f"Failed to sync '{entry.title}' to MAL after {self.max_retries} attempts: {last_error}"
-                        logger.error(error_msg)
-                        errors.append(error_msg)
-            
-            # Be gentle with the API
-            if success > 0 and success % 5 == 0:
-                time.sleep(1)
+                        errors.append(f"Error syncing {entry.title} to MAL: {e.detail}")
+                        break # Non-retriable error
+                except Exception as e:
+                    errors.append(f"An unexpected error occurred while syncing {entry.title} to MAL: {str(e)}")
+                    logger.error(f"Unexpected error syncing to MAL: {e}", exc_info=True)
+                    break
 
-        result = {
-            "success": success,
-            "errors": errors,
-            "total_attempted": len(entries),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        logger.info(f"Completed MAL sync: {success} succeeded, {len(errors)} failed")
-        return result
+        return {"success": success_count, "errors": errors}
 
-    def _sync_to_anilist(self, anilist_username: str, entries: List[AnimeEntry]) -> Dict:
+    def _sync_to_anilist(self, anilist_username: str, entries: List[AnimeEntry], token: str) -> Dict:
         """
         Sync entries to AniList with retry logic.
         
         Args:
             anilist_username: AniList username
             entries: List of AnimeEntry objects to sync
-            
+            token: The OAuth2 access token for AniList.
+
         Returns:
             Dict: Results with success/error counts and messages
         """
-        success = 0
+        success_count = 0
         errors = []
         
-        logger.info(f"Starting sync to AniList for {len(entries)} entries")
-        
         for entry in entries:
-            last_error = None
-            
             for attempt in range(1, self.max_retries + 1):
                 try:
-                    self.anilist_client.save_list_entry(
-                        title=entry.title,
-                        status=entry.status,
-                        score=entry.score * 10 if entry.score is not None else None,  # Convert 0-10 to 0-100
-                        progress=entry.episodes_watched,
-                    )
-                    success += 1
-                    logger.info(f"Successfully synced '{entry.title}' to AniList")
-                    break  # Success, exit retry loop
-                    
-                except Exception as e:
-                    last_error = str(e)
-                    if attempt < self.max_retries:
-                        delay = self._calculate_jittered_delay(attempt)
-                        logger.warning(
-                            f"Attempt {attempt} failed for '{entry.title}'. "
-                            f"Retrying in {delay:.1f}s. Error: {last_error}"
-                        )
-                        time.sleep(delay)
+                    self.anilist_client.save_list_entry(anilist_username, entry, token)
+                    success_count += 1
+                    break
+                except HTTPException as e:
+                    if e.status_code in [429, 500, 502, 503, 504]:
+                        logger.warning(f"Attempt {attempt}/{self.max_retries} failed for {entry.title} on AniList: {e.detail}. Retrying...")
+                        if attempt < self.max_retries:
+                            time.sleep(self._calculate_jittered_delay(attempt))
+                        else:
+                            errors.append(f"Failed to sync {entry.title} to AniList after {self.max_retries} attempts: {e.detail}")
                     else:
-                        error_msg = f"Failed to sync '{entry.title}' to AniList after {self.max_retries} attempts: {last_error}"
-                        logger.error(error_msg)
-                        errors.append(error_msg)
-            
-            # Be gentle with the API
-            if success > 0 and success % 5 == 0:
-                time.sleep(1)
+                        errors.append(f"Error syncing {entry.title} to AniList: {e.detail}")
+                        break
+                except Exception as e:
+                    errors.append(f"An unexpected error occurred while syncing {entry.title} to AniList: {str(e)}")
+                    logger.error(f"Unexpected error syncing to AniList: {e}", exc_info=True)
+                    break
 
-        result = {
-            "success": success,
-            "errors": errors,
-            "total_attempted": len(entries),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        return result
-    
-    def sync(self, config: SyncConfig, direction: SyncDirection = SyncDirection.BIDIRECTIONAL) -> SyncResult:
+        return {"success": success_count, "errors": errors}
+
+    def sync(self, config: SyncConfig, direction: SyncDirection = SyncDirection.BIDIRECTIONAL, mal_token: Optional[str] = None, anilist_token: Optional[str] = None) -> SyncResult:
         """
         Synchronize anime lists between MAL and AniList.
         
         Args:
-            config: Sync configuration
-            direction: Direction of synchronization
+            config: Sync configuration.
+            direction: Direction of synchronization.
+            mal_token: OAuth2 access token for MyAnimeList.
+            anilist_token: OAuth2 access token for AniList.
             
         Returns:
             SyncResult: Result of the sync operation
@@ -261,99 +222,46 @@ class AnimeSyncManager:
         sync_start = datetime.utcnow()
         sync_id = f"sync_{int(sync_start.timestamp())}"
         
+        if not mal_token or not anilist_token:
+            raise HTTPException(status_code=401, detail="Missing one or more authentication tokens.")
+
         try:
-            logger.info(f"Starting sync with direction: {direction.value}")
+            logger.info(f"Starting sync for MAL user {config.mal_username} and AniList user {config.anilist_username}")
+
+            # Fetch lists from both platforms
+            mal_list = self.mal_client.get_anime_list(config.mal_username, mal_token)
+            anilist_list = self.anilist_client.get_anime_list(config.anilist_username, anilist_token)
             
-            # Get AniList list if needed
-            anilist_list = None
-            if direction in [SyncDirection.MAL_TO_ANILIST, SyncDirection.BIDIRECTIONAL]:
-                try:
-                    anilist_list = self.anilist_client.get_user_list()
-                    logger.info(f"Fetched {len(anilist_list.anime_list) if anilist_list else 0} entries from AniList")
-                except Exception as e:
-                    logger.error(f"Failed to fetch AniList list: {str(e)}")
-                    if direction == SyncDirection.MAL_TO_ANILIST:
-                        raise Exception(f"Failed to fetch AniList list: {str(e)}")
-            
-            # Get MAL list if needed
-            mal_list = None
-            if direction in [SyncDirection.ANILIST_TO_MAL, SyncDirection.BIDIRECTIONAL]:
-                try:
-                    mal_list = self.mal_client.get_user_list()
-                    logger.info(f"Fetched {len(mal_list.anime_list) if mal_list else 0} entries from MAL")
-                except Exception as e:
-                    logger.error(f"Failed to fetch MAL list: {str(e)}")
-                    if direction == SyncDirection.ANILIST_TO_MAL:
-                        raise Exception(f"Failed to fetch MAL list: {str(e)}")
-            
-            if not mal_list and not anilist_list:
-                raise Exception("Failed to fetch lists from both MAL and AniList")
-            
-            # Compare lists if both were fetched
-            comparison = self._compare_lists(
-                mal_list or PlatformList(username=config.mal_username, anime_list=[]), 
-                anilist_list or PlatformList(username=config.anilist_username, anime_list=[])
-            )
-            
-            # Determine which entries to sync based on direction
-            sync_results = {}
-            
-            # Sync from AniList to MAL
-            if direction in [SyncDirection.ANILIST_TO_MAL, SyncDirection.BIDIRECTIONAL] and mal_list:
-                entries_to_sync = comparison["anilist_only"]
-                if entries_to_sync:
-                    logger.info(f"Syncing {len(entries_to_sync)} entries from AniList to MAL")
-                    sync_results["to_mal"] = self._sync_to_mal(config.mal_username, entries_to_sync)
-                else:
-                    logger.info("No entries to sync from AniList to MAL")
-            
-            # Sync from MAL to AniList
-            if direction in [SyncDirection.MAL_TO_ANILIST, SyncDirection.BIDIRECTIONAL] and anilist_list:
-                entries_to_sync = comparison["mal_only"]
-                if entries_to_sync:
-                    logger.info(f"Syncing {len(entries_to_sync)} entries from MAL to AniList")
-                    sync_results["to_anilist"] = self._sync_to_anilist(config.anilist_username, entries_to_sync)
-                else:
-                    logger.info("No entries to sync from MAL to AniList")
-            
-            # Prepare sync result
-            success_count = sum(r.get('success', 0) for r in sync_results.values())
-            errors = []
-            for result in sync_results.values():
-                errors.extend(result.get('errors', []))
-            
-            # Store sync history
+            if not mal_list or not anilist_list:
+                raise Exception("Failed to fetch one or both anime lists.")
+
+            # Compare lists to find differences
+            comparison = self._compare_lists(mal_list, anilist_list)
+            mal_only = comparison["mal_only"]
+            anilist_only = comparison["anilist_only"]
+
+            total_success = 0
+            total_errors = []
+
+            # Sync based on direction
+            if direction in [SyncDirection.BIDIRECTIONAL, SyncDirection.MAL_TO_ANILIST]:
+                logger.info(f"Syncing {len(mal_only)} entries from MAL to AniList")
+                if mal_only:
+                    result = self._sync_to_anilist(config.anilist_username, mal_only, anilist_token)
+                    total_success += result["success"]
+                    total_errors.extend(result["errors"])
+
+            if direction in [SyncDirection.BIDIRECTIONAL, SyncDirection.ANILIST_TO_MAL]:
+                logger.info(f"Syncing {len(anilist_only)} entries from AniList to MAL")
+                if anilist_only:
+                    result = self._sync_to_mal(config.mal_username, anilist_only, mal_token)
+                    total_success += result["success"]
+                    total_errors.extend(result["errors"])
+
             sync_end = datetime.utcnow()
             sync_duration = (sync_end - sync_start).total_seconds()
             
-            sync_entry = {
-                "id": sync_id,
-                "start_time": sync_start.isoformat(),
-                "end_time": sync_end.isoformat(),
-                "duration_seconds": sync_duration,
-                "direction": direction.value,
-                "success_count": success_count,
-                "error_count": len(errors),
-                "errors": errors,
-                "config": config.dict()
-            }
-            self.sync_history.append(sync_entry)
-            
-            # Keep only the last 100 syncs in history
-            if len(self.sync_history) > 100:
-                self.sync_history = self.sync_history[-100:]
-            
-            # Store staging data
-            self.sync_staging[config.target_platform] = {
-                "mal_list": mal_list,
-                "anilist_list": anilist_list,
-                "comparison": comparison,
-                "sync_result": sync_results,
-                "sync_id": sync_id,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"Sync completed in {sync_duration:.2f} seconds with {success_count} successes and {len(errors)} errors")
+            logger.info(f"Sync completed in {sync_duration:.2f} seconds with {total_success} successes and {len(total_errors)} errors")
             
             return SyncResult(
                 intersection=comparison.get("intersection", []),
@@ -361,9 +269,9 @@ class AnimeSyncManager:
                     "mal_only": comparison.get("mal_only", []),
                     "anilist_only": comparison.get("anilist_only", [])
                 },
-                success_count=success_count,
-                error_count=len(errors),
-                errors=errors,
+                success_count=total_success,
+                error_count=len(total_errors),
+                errors=total_errors,
                 sync_id=sync_id,
                 timestamp=datetime.utcnow().isoformat()
             )

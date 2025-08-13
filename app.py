@@ -192,107 +192,91 @@ def main():
         render_about()
 
 def render_sync_page():
-    st.title("🔄 Anime List Synchronizer")
-    st.markdown("Sync your anime lists between MyAnimeList and AniList")
-    
-    # Platform authentication
-    st.header("🔑 Authentication")
+    st.title("🔄 AniSync")
+
+    # Check authentication status
+    mal_authed, anilist_authed = get_auth_status()
+
     col1, col2 = st.columns(2)
-    
+
+    # MyAnimeList Authentication Column
     with col1:
-        with st.container(border=True):
-            st.subheader("MyAnimeList")
-            mal_username = st.text_input("MAL Username", key="mal_username")
-            mal_token = st.text_input("MAL Access Token", type="password", 
-                                   help="Get your MAL access token from https://myanimelist.net/apiconfig")
-            if mal_token:
-                st.session_state.mal_token = mal_token
-    
+        auth_status_component("MyAnimeList", mal_authed, st.session_state.get("mal_username"))
+        if not mal_authed:
+            if st.button("Login with MyAnimeList", key="mal_login"):
+                init_mal_auth()
+        else:
+            if st.button("Logout from MyAnimeList", key="mal_logout"):
+                logout("mal")
+
+    # AniList Authentication Column
     with col2:
-        with st.container(border=True):
-            st.subheader("AniList")
-            anilist_username = st.text_input("AniList Username", key="anilist_username")
-            anilist_token = st.text_input("AniList Access Token", type="password",
-                                       help="Get your AniList access token from https://anilist.co/api/v2/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=token")
-            if anilist_token:
-                st.session_state.anilist_token = anilist_token
-    
-    # Sync options
-    st.header("⚙️ Sync Options")
-    with st.expander("Advanced Options"):
-        col1, col2 = st.columns(2)
-        with col1:
-            sync_direction = st.radio(
-                "Sync Direction",
-                ["Bidirectional", "MAL to AniList", "AniList to MAL"],
-                index=0,
-                help="Choose which direction to sync your lists"
-            )
-        with col2:
-            sync_method = st.radio(
-                "Sync Method",
-                ["Smart Sync (Recommended)", "Force Overwrite"],
-                index=0,
-                help="Smart sync only updates missing entries, while force overwrite updates all"
-            )
-    
-    # Sync button
-    if st.button("🔄 Start Sync", type="primary", use_container_width=True, key="sync_button"):
-        if not mal_username or not anilist_username:
-            st.error("Please provide both usernames")
-            return
-        
-        # Determine sync direction
+        auth_status_component("AniList", anilist_authed, st.session_state.get("anilist_username"))
+        if not anilist_authed:
+            if st.button("Login with AniList", key="anilist_login"):
+                init_anilist_auth()
+        else:
+            if st.button("Logout from AniList", key="anilist_logout"):
+                logout("anilist")
+
+    # Handle auth callback centrally after rendering buttons
+    handle_auth_callback()
+
+    # If both are authenticated, show sync options
+    if mal_authed and anilist_authed:
+        st.markdown("---")
+        st.header("⚙️ Sync Options")
+
         direction_map = {
             "Bidirectional": SyncDirection.BIDIRECTIONAL,
             "MAL to AniList": SyncDirection.MAL_TO_ANILIST,
             "AniList to MAL": SyncDirection.ANILIST_TO_MAL
         }
-        
-        # Create sync config
-        sync_config = SyncConfig(
-            mal_username=mal_username,
-            anilist_username=anilist_username,
-            target_platform=("MyAnimeList" if "to MAL" in sync_direction else "AniList")
+
+        sync_direction_label = st.radio(
+            "Sync Direction",
+            list(direction_map.keys()),
+            index=0,
+            help="Choose which direction to sync your lists"
         )
-        
-        # Show progress
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        try:
-            # Update progress
-            progress_bar.progress(10)
-            status_text.info("🔍 Fetching your anime lists...")
-            
-            # Perform sync
-            progress_bar.progress(30)
-            status_text.info("🔄 Syncing your lists...")
-            
-            result = sync_manager.sync_lists(
-                config=sync_config,
-                direction=direction_map[sync_direction]
+
+        if st.button("🔄 Start Sync", type="primary", use_container_width=True, key="sync_button"):
+            sync_config = SyncConfig(
+                mal_username=st.session_state.get("mal_username"),
+                anilist_username=st.session_state.get("anilist_username"),
+                target_platform="MyAnimeList"  # This could be made configurable
             )
-            
-            # Save result
-            st.session_state.last_sync_result = result
-            st.session_state.sync_history.insert(0, {
-                "timestamp": datetime.now().isoformat(),
-                "result": result,
-                "config": sync_config.dict()
-            })
-            
-            # Show success
-            progress_bar.progress(100)
-            status_text.success("✅ Sync completed successfully!")
-            
-            # Display results
-            display_sync_result(result)
-            
-        except Exception as e:
-            progress_bar.progress(0)
-            status_text.error(f"❌ Error during sync: {str(e)}")
-            st.exception(e)
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            try:
+                status_text.info("🔍 Fetching your anime lists...")
+                progress_bar.progress(25)
+
+                result = sync_manager.sync_lists(
+                    config=sync_config,
+                    direction=direction_map[sync_direction_label]
+                )
+
+                st.session_state.last_sync_result = result
+                st.session_state.sync_history.insert(0, {
+                    "timestamp": datetime.now().isoformat(),
+                    "result": result,
+                    "config": sync_config.dict()
+                })
+
+                progress_bar.progress(100)
+                status_text.success("✅ Sync completed successfully!")
+                st.rerun()
+
+            except Exception as e:
+                progress_bar.progress(0)
+                status_text.error(f"❌ Error during sync: {str(e)}")
+                logger.exception("Sync failed")
+
+    else:
+        st.info("Please log in to both MyAnimeList and AniList to enable syncing.")
     
     # Show last sync result if available
     if st.session_state.last_sync_result:
