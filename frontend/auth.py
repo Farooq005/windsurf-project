@@ -12,7 +12,8 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def get_session_state() -> Dict[str, Any]:
     """Get or initialize the session state."""
-    if not hasattr(st, 'session_state'):
+    # Check for a key that should exist after initialization
+    if 'authenticated' not in st.session_state:
         st.session_state.update({
             'authenticated': False,
             'mal_authenticated': False,
