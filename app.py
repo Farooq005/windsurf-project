@@ -166,6 +166,10 @@ def main():
 def render_sync_page():
     st.title(" AniSync")
 
+    # Initialize session state variables
+    if 'last_sync_result' not in st.session_state:
+        st.session_state.last_sync_result = None
+
     # Check authentication status
     mal_authed, anilist_authed = get_auth_status()
 
