@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_option_menu import option_menu
 import os
 from dotenv import load_dotenv
@@ -220,9 +221,14 @@ def render_sync_page():
             if not st.session_state.authenticated["mal"]:
                 if st.button("Authenticate with MyAnimeList", key="auth_mal"):
                     authenticate_user("mal")
-                # If backend provided an auth URL, show a link button to continue
+                # If backend provided an auth URL, redirect in the SAME tab to preserve session state
                 if st.session_state.get("auth_platform") == "mal" and st.session_state.get("auth_redirect_url"):
-                    st.link_button("Continue to MyAnimeList ➜", st.session_state.auth_redirect_url, use_container_width=True)
+                    components.html(
+                        f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
+                        height=0,
+                        width=0
+                    )
+                    st.info("Redirecting to MyAnimeList for authorization…")
     
     with col2:
         with st.container(border=True):
@@ -230,9 +236,14 @@ def render_sync_page():
             if not st.session_state.authenticated["anilist"]:
                 if st.button("Authenticate with AniList", key="auth_anilist"):
                     authenticate_user("anilist")
-                # If backend provided an auth URL, show a link button to continue
+                # If backend provided an auth URL, redirect in the SAME tab to preserve session state
                 if st.session_state.get("auth_platform") == "anilist" and st.session_state.get("auth_redirect_url"):
-                    st.link_button("Continue to AniList ➜", st.session_state.auth_redirect_url, use_container_width=True)
+                    components.html(
+                        f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
+                        height=0,
+                        width=0
+                    )
+                    st.info("Redirecting to AniList for authorization…")
     
     # Sync options
     st.header("⚙️ Sync Options")
