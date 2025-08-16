@@ -221,14 +221,13 @@ def render_sync_page():
             if not st.session_state.authenticated["mal"]:
                 if st.button("Authenticate with MyAnimeList", key="auth_mal"):
                     authenticate_user("mal")
-                # If backend provided an auth URL, redirect in the SAME tab to preserve session state
+                # If backend provided an auth URL, show a SAME-TAB link (avoids new Streamlit session)
                 if st.session_state.get("auth_platform") == "mal" and st.session_state.get("auth_redirect_url"):
-                    components.html(
-                        f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
-                        height=0,
-                        width=0
+                    st.markdown(
+                        f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to MyAnimeList ➜</a>',
+                        unsafe_allow_html=True
                     )
-                    st.info("Redirecting to MyAnimeList for authorization…")
+                    st.info("If not redirected automatically, click the link above to continue in the same tab.")
     
     with col2:
         with st.container(border=True):
@@ -236,14 +235,13 @@ def render_sync_page():
             if not st.session_state.authenticated["anilist"]:
                 if st.button("Authenticate with AniList", key="auth_anilist"):
                     authenticate_user("anilist")
-                # If backend provided an auth URL, redirect in the SAME tab to preserve session state
+                # If backend provided an auth URL, show a SAME-TAB link (avoids new Streamlit session)
                 if st.session_state.get("auth_platform") == "anilist" and st.session_state.get("auth_redirect_url"):
-                    components.html(
-                        f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
-                        height=0,
-                        width=0
+                    st.markdown(
+                        f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to AniList ➜</a>',
+                        unsafe_allow_html=True
                     )
-                    st.info("Redirecting to AniList for authorization…")
+                    st.info("If not redirected automatically, click the link above to continue in the same tab.")
     
     # Sync options
     st.header("⚙️ Sync Options")
@@ -297,7 +295,11 @@ def render_sync_page():
             progress_bar.progress(30)
             status_text.info("🔄 Syncing your lists...")
             
-            result = sync_manager.sync_lists(
+            # Build a fresh manager with current tokens
+            manager = get_sync_manager(st.session_state.mal_access_token, st.session_state.anilist_access_token)
+            if not manager:
+                raise RuntimeError("Sync manager not initialized. Ensure both platforms are authenticated.")
+            result = manager.sync(
                 config=sync_config,
                 direction=direction_map[sync_direction]
             )

@@ -1,5 +1,5 @@
-from .models import AnimeEntry, PlatformList, SyncConfig, SyncResult, JSONAnimeEntry, SyncDifference
-from .api_clients import MALClient, AniListClient
+from backend.models import AnimeEntry, PlatformList, SyncConfig, SyncResult, JSONAnimeEntry, SyncDifference
+from backend.api_clients import MALClient, AniListClient
 from typing import Dict, List, Optional, Tuple, Any, Union
 from datetime import datetime
 import logging
