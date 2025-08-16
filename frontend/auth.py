@@ -23,17 +23,19 @@ __all__ = ["authenticate_user", "get_auth_status", "require_auth", "handle_auth_
 
 def get_session_state() -> Dict[str, Any]:
     """Get or initialize the session state."""
-    if not hasattr(st, 'session_state'):
-        st.session_state.update({
-            'authenticated': False,
-            'mal_authenticated': False,
-            'anilist_authenticated': False,
-            'mal_username': None,
-            'anilist_username': None,
-            'access_tokens': {},
-            'oauth_state_store': {}
-        })
-    return st.session_state
+    ss = st.session_state
+    # Ensure keys exist with correct types
+    if 'authenticated' not in ss or not isinstance(ss.get('authenticated'), dict):
+        ss['authenticated'] = {'mal': False, 'anilist': False}
+    if 'mal_username' not in ss:
+        ss['mal_username'] = None
+    if 'anilist_username' not in ss:
+        ss['anilist_username'] = None
+    if 'access_tokens' not in ss:
+        ss['access_tokens'] = {}
+    if 'oauth_state_store' not in ss or not isinstance(ss.get('oauth_state_store'), dict):
+        ss['oauth_state_store'] = {}
+    return ss
 
 def check_auth() -> bool:
     """Check if the user is authenticated with either MAL or AniList."""
@@ -112,7 +114,7 @@ def authenticate_user(platform: str):
     auth_url = f"{base_url}?{urlencode(params)}"
     st_session.auth_redirect_url = auth_url
     st_session.auth_platform = platform
-    st.experimental_rerun()
+    st.rerun()
 
 def get_auth_status(platform: str) -> bool:
     """Check if user is authenticated for the given platform."""
@@ -124,10 +126,15 @@ def handle_auth_callback() -> None:
 
     Expected URL params: code, state, provider in {mal, anilist}
     """
-    query_params = st.experimental_get_query_params()
-    code = query_params.get('code', [None])[0]
-    state = query_params.get('state', [None])[0]
-    provider = query_params.get('provider', [None])[0]
+    q = st.query_params
+    # st.query_params returns a mapping of str -> str | list[str]
+    def _first(val):
+        if isinstance(val, list):
+            return val[0] if val else None
+        return val
+    code = _first(q.get('code'))
+    state = _first(q.get('state'))
+    provider = _first(q.get('provider'))
 
     if not (code and state and provider):
         return
@@ -192,8 +199,12 @@ def handle_auth_callback() -> None:
         # Cleanup used state
         ss['oauth_state_store'].pop(state, None)
         st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}!")
-        st.experimental_set_query_params()
-        st.experimental_rerun()
+        # Clear query params and rerun
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        st.rerun()
     except Exception as e:
         st.error(f"Error finalizing authentication: {e}")
 
@@ -216,7 +227,7 @@ def logout() -> None:
     # Clear any pending oauth state mapping
     ss = get_session_state()
     ss['oauth_state_store'].clear()
-    st.experimental_rerun()
+    st.rerun()
 
 def require_auth(platform: str = 'any') -> bool:
     """
