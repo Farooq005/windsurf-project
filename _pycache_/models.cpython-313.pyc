@@ -1,0 +1,22 @@
+ó
+    îãšhT  ã                   ó€   • S SK JrJr  S SKJrJrJr   " S S\5      r  " S S\5      r " S  S\5      r	 " S	 S
+\5      r
+g
+)é    )Ú	BaseModelÚField)ÚListÚDictÚOptionalc                   óZ   • \ rS rSr% \\S'   \\S'   \\    \S'   \\    \S'   \\    \S'   S rg)	Ú
+AnimeEntryé   ÚtitleÚstatusÚscoreÚepisodes_watchedÚtotal_episodes© N)	Ú__name__Ú
+__module__Ú__qualname__Ú__firstlineno__ÚstrÚ__annotations__r    ÚintÚ__static_attributes__r   ó    Ú\c:\Users\shaik\OneDrive\Documents\Project\CascadeProjects\windsurf-project\backend\models.pyr	   r	      s*   ‡ Ø
+ƒJØƒKØ
+C‰=ÓØ˜s‘mÓ#Ø˜S‘MÖ!r   r	   c                   ó0   • \ rS rSr% \\S'   \\    \S'   Srg)ÚPlatformListé
+   ÚusernameÚ
+anime_listr   N)	r   r   r   r   r   r   r   r	   r   r   r   r   r   r   
+   s   ‡ ØƒMØZÑ Ö r   r   c                   ó4   • \ rS rSr% \\S'   \\S'   \\S'   Srg) Ú
+SyncConfigé   Úmal_usernameÚanilist_usernameÚtarget_platformr   N) r   r   r   r   r   r   r   r   r   r   r!   r!      s   ‡ ØÓØÓØÖr   r!   c                   ód   • \ rS rSr% \\   \S'   \ \\\   4   \S'   \	\S'   \	\S'   \\   \S'   S r
+g)	Ú
+SyncResulté   ÚintersectionÚ
+differencesÚ
+success_countÚ
+error_countÚerrorsr   N)
+r   r   r   r   r   r	   r   r   r   r   r   r   r   r   r'   r'      s8   ‡ ØzÑ"Ó"Øc˜4 
+Ñ+Ð+Ñ,Ó,ØÓØÓØ‰IÖr   r'   N)
+Úpydanticr   r   Útypingr   r   r    r	   r   r!   r'   r   r   r   Ú<module>r0      s>   ðß %ß 'Ñ 'ô"ô "ô!9ô !ôô ô
+õ r   

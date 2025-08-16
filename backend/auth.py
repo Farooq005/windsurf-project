@@ -59,16 +59,15 @@ def get_mal_auth_url(request: Request) -> str:
         raise ValueError("MAL_CLIENT_ID is not configured")
     
     state = generate_state()
-    code_verifier = generate_state()
-    oauth_states[state] = {"type": "mal", "code_verifier": code_verifier}
-
+    oauth_states[state] = {"type": "mal"}
+    
     params = {
         "client_id": MAL_CLIENT_ID,
         "response_type": "code",
         "state": state,
-        "code_challenge": code_verifier,
+        "code_challenge": generate_state(),  # PKCE support
         "code_challenge_method": "plain",
-        "redirect_uri": f"{BASE_URL}/auth/mal/callback"
+        "redirect_uri": f"{BASE_URL}auth/mal/callback"
     }
     
     return f"{MAL_AUTH_URL}?{urlencode(params)}"
@@ -92,7 +91,7 @@ async def handle_mal_callback(request: Request) -> Tuple[Dict, str]:
         "grant_type": "authorization_code",
         "code": code,
         "code_verifier": oauth_states[state].get("code_verifier"),
-        "redirect_uri": f"{BASE_URL}/auth/mal/callback"
+        "redirect_uri": f"{BASE_URL}auth/mal/callback"
     }
     
     response = requests.post(MAL_TOKEN_URL, data=data)
@@ -126,7 +125,7 @@ def get_anilist_auth_url(request: Request) -> str:
         "client_id": ANILIST_CLIENT_ID,
         "response_type": "code",
         "state": state,
-        "redirect_uri": f"{BASE_URL}/auth/anilist/callback"
+        "redirect_uri": f"{BASE_URL}auth/anilist/callback"
     }
     
     return f"{ANILIST_AUTH_URL}?{urlencode(params)}"
@@ -149,7 +148,7 @@ async def handle_anilist_callback(request: Request) -> Tuple[Dict, str]:
         "client_secret": ANILIST_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": f"{BASE_URL}/auth/anilist/callback"
+        "redirect_uri": f"{BASE_URL}auth/anilist/callback"
     }
     
     response = requests.post(ANILIST_TOKEN_URL, json=data)

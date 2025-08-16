@@ -8,6 +8,10 @@ class AnimeEntry(BaseModel):
     episodes_watched: Optional[int]
     total_episodes: Optional[int]
 
+class JSONAnimeEntry(BaseModel):
+    name: str
+    mal: str
+    al: str
 
 class PlatformList(BaseModel):
     username: str
