@@ -33,11 +33,26 @@ load_dotenv()
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Initialize session state
-get_session_state()
+if "mal_access_token" not in st.session_state:
+    st.session_state.mal_access_token = None
+if "mal_refresh_token" not in st.session_state:
+    st.session_state.mal_refresh_token = None
+if "anilist_access_token" not in st.session_state:
+    st.session_state.anilist_access_token = None
+if "anilist_refresh_token" not in st.session_state:
+    st.session_state.anilist_refresh_token = None
+if "mal_username" not in st.session_state:
+    st.session_state.mal_username = None
+if "anilist_username" not in st.session_state:
+    st.session_state.anilist_username = None
+if 'sync_history' not in st.session_state:
+    st.session_state.sync_history = []
+if 'last_sync_result' not in st.session_state:
+    st.session_state.last_sync_result = None
 
-# Initialize API clients with empty tokens (will be set during auth)
-mal_client = MALClient()
-anilist_client = AniListClient()
+# Initialize API clients with tokens
+mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
+anilist_client = AniListClient(st.session_state.anilist_access_token) if st.session_state.anilist_access_token else None
 
 # Initialize sync manager
 sync_manager = AnimeSyncManager(mal_client, anilist_client)
@@ -154,16 +169,10 @@ def get_platform_icon(platform: str) -> str:
     }
     return icons.get(platform, "📋")
 
-# Initialize session state
-if 'sync_history' not in st.session_state:
-    st.session_state.sync_history = []
-if 'last_sync_result' not in st.session_state:
-    st.session_state.last_sync_result = None
-
 # Initialize API clients and sync manager
 @st.cache_resource
 def get_sync_manager():
-    return AnimeSyncManager(MALClient(), AniListClient())
+    return AnimeSyncManager(MALClient(st.session_state.mal_access_token), AniListClient(st.session_state.anilist_access_token))
 
 sync_manager = get_sync_manager()
 
@@ -244,8 +253,8 @@ def render_sync_page():
         
         # Create sync config
         sync_config = SyncConfig(
-            mal_username=get_session_state().mal_username,
-            anilist_username=get_session_state().anilist_username,
+            mal_username=st.session_state.mal_username,
+            anilist_username=st.session_state.anilist_username,
             target_platform=("MyAnimeList" if "to MAL" in sync_direction else "AniList")
         )
         

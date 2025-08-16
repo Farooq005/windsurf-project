@@ -47,11 +47,11 @@ class CallbackResponse(BaseModel):
 router = APIRouter()
 
 @router.get("/auth/{platform}")
-async def auth_redirect(platform: str):
+async def auth_redirect(platform: str, request: Request):
     """Redirect to the platform's authorization URL."""
     try:
         auth_url, code_verifier = get_authorization_url(platform)
-        # Store code_verifier in session or database (for demo, we use session)
+        # Store code_verifier in session
         request.session[f"{platform}_code_verifier"] = code_verifier
         return RedirectResponse(url=auth_url)
     except Exception as e:
