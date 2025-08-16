@@ -9,9 +9,23 @@ import os
 import base64
 import hashlib
 
+def _cfg(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Read config from Streamlit secrets first, then environment variables."""
+    try:
+        # st.secrets may not exist locally; guard with try/except
+        val = st.secrets.get(name)  # type: ignore[attr-defined]
+        if val is not None:
+            return str(val)
+    except Exception:
+        pass
+    return os.getenv(name, default)
+
 # API/Frontend configuration
-API_BASE_URL = os.getenv("API_BASE_URL", "")  # not used for OAuth anymore
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://list-sync-anime.streamlit.app").rstrip("/")
+API_BASE_URL = _cfg("API_BASE_URL", "")  # not used for OAuth anymore
+
+def _frontend_base_url() -> str:
+    """Read FRONTEND_BASE_URL lazily to respect .env loaded later by app.py."""
+    return ( _cfg("FRONTEND_BASE_URL", "https://list-sync-anime.streamlit.app") or "" ).rstrip("/")
 
 # Provider endpoints
 MAL_AUTH_URL = "https://myanimelist.net/v1/oauth2/authorize"
@@ -76,14 +90,16 @@ def authenticate_user(platform: str):
         st.error("Unsupported platform")
         return
 
-    client_id = os.getenv("MAL_CLIENT_ID") if platform == "mal" else os.getenv("ANILIST_CLIENT_ID")
+    client_id = _cfg("MAL_CLIENT_ID") if platform == "mal" else _cfg("ANILIST_CLIENT_ID")
     if not client_id:
         st.error(f"Missing {'MAL' if platform=='mal' else 'AniList'} client ID in environment")
         return
 
     verifier, challenge = _generate_pkce()
     state = base64.urlsafe_b64encode(os.urandom(24)).decode("ascii").rstrip("=")
-    redirect_uri = f"{FRONTEND_BASE_URL}/?provider={platform}"
+    # Use a single exact redirect URI to match provider app settings and avoid mismatches.
+    # We will recover the platform from the stored state on callback.
+    redirect_uri = f"{_frontend_base_url()}/"
 
     # Store mapping from state to verifier
     ss = get_session_state()
@@ -95,6 +111,7 @@ def authenticate_user(platform: str):
             "client_id": client_id,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            "scope": "write",
             "state": state,
             "redirect_uri": redirect_uri,
         }
@@ -119,12 +136,13 @@ def authenticate_user(platform: str):
 def get_auth_status(platform: str) -> bool:
     """Check if user is authenticated for the given platform."""
     from streamlit import session_state as st_session
-    return f"{platform}_access_token" in st_session
+    return bool(st_session.get(f"{platform}_access_token"))
 
 def handle_auth_callback() -> None:
     """Handle OAuth2 callback from public redirect to the Streamlit app.
 
-    Expected URL params: code, state, provider in {mal, anilist}
+    Expected URL params: code, state
+    Platform is determined from the stored state mapping.
     """
     q = st.query_params
     # st.query_params returns a mapping of str -> str | list[str]
@@ -134,30 +152,28 @@ def handle_auth_callback() -> None:
         return val
     code = _first(q.get('code'))
     state = _first(q.get('state'))
-    provider = _first(q.get('provider'))
 
-    if not (code and state and provider):
-        return
-
-    platform = provider.lower()
-    if platform not in ("mal", "anilist"):
-        st.error("Unknown provider in callback.")
+    if not (code and state):
         return
 
     # Retrieve verifier from session
     ss = get_session_state()
     entry = ss['oauth_state_store'].get(state)
-    if not entry or entry.get('platform') != platform:
+    if not entry:
         st.error("Invalid or expired state. Please restart authentication.")
+        return
+    platform = entry.get('platform')
+    if platform not in ("mal", "anilist"):
+        st.error("Unknown provider in callback.")
         return
     verifier = entry['code_verifier']
 
     # Build token request
-    redirect_uri = f"{FRONTEND_BASE_URL}/?provider={platform}"
+    redirect_uri = f"{_frontend_base_url()}/"
     try:
         if platform == "mal":
-            client_id = os.getenv("MAL_CLIENT_ID")
-            client_secret = os.getenv("MAL_CLIENT_SECRET")
+            client_id = _cfg("MAL_CLIENT_ID")
+            client_secret = _cfg("MAL_CLIENT_SECRET")
             data = {
                 "client_id": client_id,
                 "client_secret": client_secret,
@@ -168,16 +184,17 @@ def handle_auth_callback() -> None:
             }
             resp = requests.post(MAL_TOKEN_URL, data=data, timeout=15)
         else:
-            client_id = os.getenv("ANILIST_CLIENT_ID")
-            client_secret = os.getenv("ANILIST_CLIENT_SECRET")
+            client_id = _cfg("ANILIST_CLIENT_ID")
+            client_secret = _cfg("ANILIST_CLIENT_SECRET")
             data = {
                 "grant_type": "authorization_code",
                 "client_id": client_id,
-                "client_secret": client_secret,
                 "redirect_uri": redirect_uri,
                 "code": code,
                 "code_verifier": verifier,
             }
+            if client_secret:
+                data["client_secret"] = client_secret
             resp = requests.post(ANILIST_TOKEN_URL, data=data, timeout=15)
 
         if resp.status_code != 200:

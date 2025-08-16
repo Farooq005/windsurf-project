@@ -56,15 +56,7 @@ if "authenticated" not in st.session_state:
 # No local FastAPI server needed when using public OAuth redirects
 st.session_state.server_started = False
 
-# Initialize API clients with tokens
-mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
-anilist_client = AniListClient(st.session_state.anilist_access_token) if st.session_state.anilist_access_token else None
-
-# Initialize sync manager
-if mal_client and anilist_client:
-    sync_manager = AnimeSyncManager(mal_client, anilist_client)
-else:
-    sync_manager = None
+# Clients and sync_manager are created via cached factory below
 
 # Configure page
 st.set_page_config(
@@ -180,15 +172,15 @@ def get_platform_icon(platform: str) -> str:
 
 # Initialize API clients and sync manager
 @st.cache_resource
-def get_sync_manager():
-    mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
-    anilist_client = AniListClient(st.session_state.anilist_access_token) if st.session_state.anilist_access_token else None
+def get_sync_manager(mal_token: Optional[str], anilist_token: Optional[str]):
+    mal_client = MALClient(mal_token) if mal_token else None
+    anilist_client = AniListClient(anilist_token) if anilist_token else None
     if mal_client and anilist_client:
         return AnimeSyncManager(mal_client, anilist_client)
     else:
         return None
 
-sync_manager = get_sync_manager()
+sync_manager = get_sync_manager(st.session_state.mal_access_token, st.session_state.anilist_access_token)
 
 def main():
     st.sidebar.title("AniSync")

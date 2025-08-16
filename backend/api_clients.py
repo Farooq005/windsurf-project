@@ -45,7 +45,9 @@ class BaseAPIClient:
 class MALClient(BaseAPIClient):
     def __init__(self, access_token: str = None):
         super().__init__()
-        self.access_token = access_token
+        # Default to env token/username if not provided
+        self.access_token = access_token or os.getenv('MAL_ACCESS_TOKEN')
+        self.username = os.getenv('MAL_USERNAME') or self.username
         self.base_url = "https://api.myanimelist.net/v2"
         self.client_id = os.getenv('MAL_CLIENT_ID')
         if not self.client_id:
@@ -137,6 +139,10 @@ class MALClient(BaseAPIClient):
             return None
         return first[0].get('node', {}).get('id')
 
+    # Backwards-compatible alias used by tests
+    def search_media_id(self, title: str) -> Optional[int]:
+        return self.search_anime_id(title)
+
     def save_list_entry(self, title: str, status: Optional[str], score: Optional[int], progress: Optional[int]) -> bool:
         """
         Save or update an anime entry in the user's MyAnimeList.
@@ -215,7 +221,9 @@ class MALClient(BaseAPIClient):
 class AniListClient(BaseAPIClient):
     def __init__(self, access_token: str = None):
         super().__init__()
-        self.access_token = access_token
+        # Default to env token/username if not provided
+        self.access_token = access_token or os.getenv('ANILIST_ACCESS_TOKEN')
+        self.username = os.getenv('ANILIST_USERNAME') or self.username
         self.base_url = "https://graphql.anilist.co"
         
     def get_user_list(self, username: str = None) -> PlatformList:
@@ -359,9 +367,9 @@ class AniListClient(BaseAPIClient):
         return PlatformList(username=username, anime_list=anime_entries)
 
     def _auth_headers(self) -> Dict[str, str]:
-        if not self.token:
+        if not self.access_token:
             raise ValueError("AniList access token missing. Set ANILIST_ACCESS_TOKEN in credentials.env")
-        return {"Authorization": f"Bearer {self.token}"}
+        return {"Authorization": f"Bearer {self.access_token}"}
 
     def search_media_id(self, title: str) -> Optional[int]:
         query = '''
@@ -393,7 +401,7 @@ class AniListClient(BaseAPIClient):
             ValueError: If required authentication is missing or invalid parameters
             Exception: If the anime is not found or API request fails
         """
-        if not self.token:
+        if not self.access_token:
             raise ValueError("AniList access token is required for write operations. Set ANILIST_ACCESS_TOKEN in credentials.env")
             
         media_id = self.search_media_id(title)
@@ -420,7 +428,7 @@ class AniListClient(BaseAPIClient):
         # Prepare variables for the mutation
         variables = {
             "mediaId": media_id,
-            "status": status_map.get(status.upper()) if status else None,
+            "status": status_map.get(status.lower()) if status else None,
             "scoreRaw": float(score) * 10 if isinstance(score, (int, float)) and score is not None else None,
             "progress": int(progress) if isinstance(progress, (int, float)) and progress is not None else None,
         }
