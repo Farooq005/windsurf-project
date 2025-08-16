@@ -96,12 +96,12 @@ def authenticate_user(platform: str):
         return
 
     verifier, challenge = _generate_pkce()
-    state = base64.urlsafe_b64encode(os.urandom(24)).decode("ascii").rstrip("=")
-    # Use a single exact redirect URI to match provider app settings and avoid mismatches.
-    # We will recover the platform from the stored state on callback.
+    # Embed platform and verifier in state to survive new Streamlit sessions after redirect
+    payload = {"p": platform, "v": verifier}
+    state = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
     redirect_uri = f"{_frontend_base_url()}/"
 
-    # Store mapping from state to verifier
+    # Also store in session as a fallback (not relied upon)
     ss = get_session_state()
     ss['oauth_state_store'][state] = {"platform": platform, "code_verifier": verifier}
 
@@ -156,17 +156,29 @@ def handle_auth_callback() -> None:
     if not (code and state):
         return
 
-    # Retrieve verifier from session
-    ss = get_session_state()
-    entry = ss['oauth_state_store'].get(state)
-    if not entry:
+    # Retrieve verifier/platform first from encoded state, fallback to session store
+    platform = None
+    verifier = None
+    try:
+        # Add padding for base64 if needed
+        pad = '=' * (-len(state) % 4)
+        decoded = base64.urlsafe_b64decode((state + pad).encode('ascii')).decode('utf-8')
+        obj = json.loads(decoded)
+        platform = obj.get('p')
+        verifier = obj.get('v')
+    except Exception:
+        pass
+
+    if not (platform and verifier):
+        ss = get_session_state()
+        entry = (ss.get('oauth_state_store') or {}).get(state)
+        if entry:
+            platform = entry.get('platform')
+            verifier = entry.get('code_verifier')
+
+    if platform not in ("mal", "anilist") or not verifier:
         st.error("Invalid or expired state. Please restart authentication.")
         return
-    platform = entry.get('platform')
-    if platform not in ("mal", "anilist"):
-        st.error("Unknown provider in callback.")
-        return
-    verifier = entry['code_verifier']
 
     # Build token request
     redirect_uri = f"{_frontend_base_url()}/"
