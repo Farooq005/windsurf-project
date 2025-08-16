@@ -5,13 +5,8 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime
 import logging
-import requests
 from typing import Dict, Any, Optional, List
 import pandas as pd
-import subprocess
-import atexit
-import threading
-import uvicorn
 
 # Import frontend components
 from frontend.components import (
@@ -19,7 +14,7 @@ from frontend.components import (
     sync_config_component, sync_button_component, sync_results_component,
     anime_list_component
 )
-from frontend.auth import authenticate_user, get_auth_status, require_auth
+from frontend.auth import authenticate_user, get_auth_status, require_auth, handle_auth_callback
 
 # Import backend modules
 from backend.models import SyncConfig, SyncResult, SyncDifference
@@ -58,14 +53,8 @@ if "server_started" not in st.session_state:
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = {"mal": False, "anilist": False}
 
-# Start the FastAPI server
-if not st.session_state.server_started:
-    def run_server():
-        uvicorn.run("backend.api:app", host="0.0.0.0", port=8000, reload=False)
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-    st.session_state.server_started = True
+# No local FastAPI server needed when using public OAuth redirects
+st.session_state.server_started = False
 
 # Initialize API clients with tokens
 mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
@@ -229,18 +218,8 @@ def render_sync_page():
     # Platform authentication
     st.header("🔑 Authentication")
 
-    # Handle OAuth success redirect from backend
-    params = st.experimental_get_query_params()
-    if 'auth_success' in params:
-        platform = (params['auth_success'][0] or '').lower()
-        if platform in st.session_state.authenticated:
-            st.session_state.authenticated[platform] = True
-            st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}!")
-        # Clear temporary auth redirect state and URL params
-        st.session_state.pop('auth_redirect_url', None)
-        st.session_state.pop('auth_platform', None)
-        st.experimental_set_query_params()
-        st.experimental_rerun()
+    # Handle OAuth callback directly in Streamlit (code/state/provider)
+    handle_auth_callback()
     col1, col2 = st.columns(2)
     
     with col1:

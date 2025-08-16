@@ -3,14 +3,23 @@ Authentication components for the Streamlit UI.
 """
 import streamlit as st
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import json
 import os
+import base64
+import hashlib
 
-# API base URL
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+# API/Frontend configuration
+API_BASE_URL = os.getenv("API_BASE_URL", "")  # not used for OAuth anymore
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://list-sync-anime.streamlit.app").rstrip("/")
 
-__all__ = ["authenticate_user", "get_auth_status", "require_auth"]
+# Provider endpoints
+MAL_AUTH_URL = "https://myanimelist.net/v1/oauth2/authorize"
+MAL_TOKEN_URL = "https://myanimelist.net/v1/oauth2/token"
+ANILIST_AUTH_URL = "https://anilist.co/api/v2/oauth/authorize"
+ANILIST_TOKEN_URL = "https://anilist.co/api/v2/oauth/token"
+
+__all__ = ["authenticate_user", "get_auth_status", "require_auth", "handle_auth_callback"]
 
 def get_session_state() -> Dict[str, Any]:
     """Get or initialize the session state."""
@@ -21,13 +30,18 @@ def get_session_state() -> Dict[str, Any]:
             'anilist_authenticated': False,
             'mal_username': None,
             'anilist_username': None,
-            'access_tokens': {}
+            'access_tokens': {},
+            'oauth_state_store': {}
         })
     return st.session_state
 
 def check_auth() -> bool:
     """Check if the user is authenticated with either MAL or AniList."""
     state = get_session_state()
+    # If no backend, infer from session tokens/flags
+    if not API_BASE_URL:
+        auth = st.session_state.get('authenticated', {})
+        return bool(auth.get('mal') or auth.get('anilist') or st.session_state.get('mal_access_token') or st.session_state.get('anilist_access_token'))
     try:
         response = requests.get(f"{API_BASE_URL}/auth/session", cookies=st.session_state.get('cookies', {}))
         if response.status_code == 200:
@@ -39,62 +53,66 @@ def check_auth() -> bool:
                 'mal_username': data.get('mal_username'),
                 'anilist_username': data.get('anilist_username')
             })
-            return state['authenticated']
-    except Exception as e:
-        st.error(f"Error checking authentication status: {e}")
-    return False
+            return bool(state['authenticated'])
+    except Exception:
+        pass
+    return bool(st.session_state.get('mal_access_token') or st.session_state.get('anilist_access_token'))
+
+def _generate_pkce() -> Tuple[str, str]:
+    verifier = base64.urlsafe_b64encode(os.urandom(64)).decode("ascii").rstrip("=")
+    m = hashlib.sha256()
+    m.update(verifier.encode("ascii"))
+    challenge = base64.urlsafe_b64encode(m.digest()).decode("ascii").rstrip("=")
+    return verifier, challenge
 
 def authenticate_user(platform: str):
-    """Redirect to backend auth endpoint."""
-    import time
-    import requests
+    """Prepare provider authorization URL using PKCE and present it to the user."""
     from streamlit import session_state as st_session
 
-    # Normalize platform casing
     platform = platform.lower()
-
-    # Reset any existing tokens
-    st_session.pop(f"{platform}_access_token", None)
-
-    # Wait for backend to be ready
-    health_url = f"{API_BASE_URL}/health"
-    for _ in range(25):  # ~5 seconds max
-        try:
-            r = requests.get(health_url, timeout=0.2)
-            if r.status_code == 200:
-                break
-        except Exception:
-            time.sleep(0.2)
-    else:
-        st.error("Backend is not ready. Please try again in a moment.")
+    if platform not in ("mal", "anilist"):
+        st.error("Unsupported platform")
         return
 
-    # Trigger backend auth redirect without following it
-    response = requests.get(f"{API_BASE_URL}/auth/{platform}", allow_redirects=False)
-    if response.status_code in (301, 302, 303, 307, 308):
-        auth_url = response.headers.get("Location") or response.headers.get("location")
-        if not auth_url:
-            st.error("Backend did not provide an authorization URL.")
-            return
-        # Store URL for the app to render a link/button
-        st_session.auth_redirect_url = auth_url
-        st_session.auth_platform = platform
-        st.experimental_rerun()
-    elif response.status_code == 200:
-        # Some backends may return JSON with the URL; try to parse
-        try:
-            data = response.json()
-            auth_url = data.get("url")
-            if auth_url:
-                st_session.auth_redirect_url = auth_url
-                st_session.auth_platform = platform
-                st.experimental_rerun()
-                return
-        except Exception:
-            pass
-        st.error("Unexpected response from authentication endpoint.")
+    client_id = os.getenv("MAL_CLIENT_ID") if platform == "mal" else os.getenv("ANILIST_CLIENT_ID")
+    if not client_id:
+        st.error(f"Missing {'MAL' if platform=='mal' else 'AniList'} client ID in environment")
+        return
+
+    verifier, challenge = _generate_pkce()
+    state = base64.urlsafe_b64encode(os.urandom(24)).decode("ascii").rstrip("=")
+    redirect_uri = f"{FRONTEND_BASE_URL}/?provider={platform}"
+
+    # Store mapping from state to verifier
+    ss = get_session_state()
+    ss['oauth_state_store'][state] = {"platform": platform, "code_verifier": verifier}
+
+    if platform == "mal":
+        params = {
+            "response_type": "code",
+            "client_id": client_id,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "state": state,
+            "redirect_uri": redirect_uri,
+        }
+        base_url = MAL_AUTH_URL
     else:
-        st.error(f"Failed to start authentication: {response.status_code} {response.text}")
+        params = {
+            "response_type": "code",
+            "client_id": client_id,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "state": state,
+            "redirect_uri": redirect_uri,
+        }
+        base_url = ANILIST_AUTH_URL
+
+    from urllib.parse import urlencode
+    auth_url = f"{base_url}?{urlencode(params)}"
+    st_session.auth_redirect_url = auth_url
+    st_session.auth_platform = platform
+    st.experimental_rerun()
 
 def get_auth_status(platform: str) -> bool:
     """Check if user is authenticated for the given platform."""
@@ -102,71 +120,103 @@ def get_auth_status(platform: str) -> bool:
     return f"{platform}_access_token" in st_session
 
 def handle_auth_callback() -> None:
-    """Handle OAuth2 callback from the URL parameters."""
+    """Handle OAuth2 callback from public redirect to the Streamlit app.
+
+    Expected URL params: code, state, provider in {mal, anilist}
+    """
     query_params = st.experimental_get_query_params()
-    
-    # Handle MAL callback
-    if 'code' in query_params and 'state' in query_params:
-        try:
-            response = requests.get(
-                f"{API_BASE_URL}/auth/mal/callback",
-                params={"code": query_params['code'][0], "state": query_params['state'][0]}
-            )
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success'):
-                    st.success("Successfully authenticated with MyAnimeList!")
-                    st.experimental_set_query_params()  # Clear the URL parameters
-                    st.experimental_rerun()
-                else:
-                    st.error(f"Failed to authenticate with MyAnimeList: {data.get('error')}")
-            else:
-                st.error(f"Failed to authenticate with MyAnimeList: {response.text}")
-        except Exception as e:
-            st.error(f"Error handling MAL callback: {e}")
-    
-    # Handle AniList callback
-    # This part is tricky because both callbacks use 'code' and 'state'.
-    # We need a way to distinguish them. We assume if the 'state' is not in our MAL records,
-    # it must be for AniList. This relies on the backend storing state separately.
-    elif 'code' in query_params and 'state' in query_params and 'mal_auth_url' not in st.session_state:
-        try:
-            response = requests.get(
-                f"{API_BASE_URL}/auth/anilist/callback",
-                params={"code": query_params['code'][0], "state": query_params['state'][0]}
-            )
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success'):
-                    st.success("Successfully authenticated with AniList!")
-                    st.experimental_set_query_params()  # Clear the URL parameters
-                    st.experimental_rerun()
-                else:
-                    st.error(f"Failed to authenticate with AniList: {data.get('error')}")
-            else:
-                st.error(f"Failed to authenticate with AniList: {response.text}")
-        except Exception as e:
-            st.error(f"Error handling AniList callback: {e}")
+    code = query_params.get('code', [None])[0]
+    state = query_params.get('state', [None])[0]
+    provider = query_params.get('provider', [None])[0]
+
+    if not (code and state and provider):
+        return
+
+    platform = provider.lower()
+    if platform not in ("mal", "anilist"):
+        st.error("Unknown provider in callback.")
+        return
+
+    # Retrieve verifier from session
+    ss = get_session_state()
+    entry = ss['oauth_state_store'].get(state)
+    if not entry or entry.get('platform') != platform:
+        st.error("Invalid or expired state. Please restart authentication.")
+        return
+    verifier = entry['code_verifier']
+
+    # Build token request
+    redirect_uri = f"{FRONTEND_BASE_URL}/?provider={platform}"
+    try:
+        if platform == "mal":
+            client_id = os.getenv("MAL_CLIENT_ID")
+            client_secret = os.getenv("MAL_CLIENT_SECRET")
+            data = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": verifier,
+            }
+            resp = requests.post(MAL_TOKEN_URL, data=data, timeout=15)
+        else:
+            client_id = os.getenv("ANILIST_CLIENT_ID")
+            client_secret = os.getenv("ANILIST_CLIENT_SECRET")
+            data = {
+                "grant_type": "authorization_code",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "code": code,
+                "code_verifier": verifier,
+            }
+            resp = requests.post(ANILIST_TOKEN_URL, data=data, timeout=15)
+
+        if resp.status_code != 200:
+            st.error(f"Failed to exchange code: {resp.status_code} {resp.text}")
+            return
+        token = resp.json()
+        access = token.get("access_token")
+        refresh = token.get("refresh_token")
+        if platform == "mal":
+            st.session_state.mal_access_token = access
+            st.session_state.mal_refresh_token = refresh
+            st.session_state.authenticated = st.session_state.get("authenticated", {"mal": False, "anilist": False})
+            st.session_state.authenticated["mal"] = True
+        else:
+            st.session_state.anilist_access_token = access
+            st.session_state.anilist_refresh_token = refresh
+            st.session_state.authenticated = st.session_state.get("authenticated", {"mal": False, "anilist": False})
+            st.session_state.authenticated["anilist"] = True
+        # Cleanup used state
+        ss['oauth_state_store'].pop(state, None)
+        st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}!")
+        st.experimental_set_query_params()
+        st.experimental_rerun()
+    except Exception as e:
+        st.error(f"Error finalizing authentication: {e}")
 
 
 def logout() -> None:
     """Log out the current user."""
-    try:
-        response = requests.post(f"{API_BASE_URL}/auth/logout", cookies=st.session_state.get('cookies', {}))
-        if response.status_code == 200:
-            st.session_state.update({
-                'authenticated': False,
-                'mal_authenticated': False,
-                'anilist_authenticated': False,
-                'mal_username': None,
-                'anilist_username': None,
-                'access_tokens': {}
-            })
-            st.experimental_rerun()
-        else:
-            st.error(f"Failed to log out: {response.text}")
-    except Exception as e:
-        st.error(f"Error logging out: {e}")
+    # Local session-only logout
+    st.session_state.update({
+        'mal_access_token': None,
+        'mal_refresh_token': None,
+        'anilist_access_token': None,
+        'anilist_refresh_token': None,
+        'mal_username': None,
+        'anilist_username': None,
+    })
+    # Auth flags
+    st.session_state.authenticated = {'mal': False, 'anilist': False}
+    st.session_state.pop('auth_redirect_url', None)
+    st.session_state.pop('auth_platform', None)
+    # Clear any pending oauth state mapping
+    ss = get_session_state()
+    ss['oauth_state_store'].clear()
+    st.experimental_rerun()
 
 def require_auth(platform: str = 'any') -> bool:
     """
@@ -178,18 +228,23 @@ def require_auth(platform: str = 'any') -> bool:
     Returns:
         bool: True if authenticated, False otherwise
     """
-    state = get_session_state()
-    
-    if platform == 'mal' and not state['mal_authenticated']:
-        st.warning("Please authenticate with MyAnimeList to continue.")
-        authenticate_user('mal')
-        return False
-    elif platform == 'anilist' and not state['anilist_authenticated']:
-        st.warning("Please authenticate with AniList to continue.")
-        authenticate_user('anilist')
-        return False
-    elif platform == 'any' and not (state['mal_authenticated'] or state['anilist_authenticated']):
-        st.warning("Please authenticate with at least one platform to continue.")
-        return False
-        
-    return True
+    ss = get_session_state()
+    auth_flags = ss.get('authenticated', {'mal': False, 'anilist': False})
+    mal_ok = bool(auth_flags.get('mal') or st.session_state.get('mal_access_token'))
+    anilist_ok = bool(auth_flags.get('anilist') or st.session_state.get('anilist_access_token'))
+
+    if platform == 'mal':
+        if not mal_ok:
+            st.warning("Please authenticate with MyAnimeList to continue.")
+            return False
+        return True
+    elif platform == 'anilist':
+        if not anilist_ok:
+            st.warning("Please authenticate with AniList to continue.")
+            return False
+        return True
+    else:  # any
+        if not (mal_ok or anilist_ok):
+            st.warning("Please authenticate with at least one platform to continue.")
+            return False
+        return True

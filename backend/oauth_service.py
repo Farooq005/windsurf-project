@@ -11,11 +11,16 @@ from fastapi import HTTPException
 # Load environment variables
 MAL_CLIENT_ID = os.getenv("MAL_CLIENT_ID")
 MAL_CLIENT_SECRET = os.getenv("MAL_CLIENT_SECRET")
-MAL_REDIRECT_URI = os.getenv("MAL_REDIRECT_URI")
 
 ANILIST_CLIENT_ID = os.getenv("ANILIST_CLIENT_ID")
 ANILIST_CLIENT_SECRET = os.getenv("ANILIST_CLIENT_SECRET")
-ANILIST_REDIRECT_URI = os.getenv("ANILIST_REDIRECT_URI")
+
+# Public frontend base for OAuth redirects (defaults to Streamlit Cloud app)
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://list-sync-anime.streamlit.app").rstrip("/")
+
+# Prefer explicit redirect URIs from env, else default to frontend base with provider hint
+MAL_REDIRECT_URI = os.getenv("MAL_REDIRECT_URI", f"{FRONTEND_BASE_URL}/?provider=mal")
+ANILIST_REDIRECT_URI = os.getenv("ANILIST_REDIRECT_URI", f"{FRONTEND_BASE_URL}/?provider=anilist")
 
 
 def generate_pkce() -> Tuple[str, str]:
@@ -53,6 +58,7 @@ def get_authorization_url(platform: str) -> Tuple[str, str]:
             "response_type": "code",
             "client_id": MAL_CLIENT_ID,
             "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
             "state": secrets.token_urlsafe(16),
             "redirect_uri": MAL_REDIRECT_URI,
         }
@@ -63,6 +69,7 @@ def get_authorization_url(platform: str) -> Tuple[str, str]:
             "response_type": "code",
             "redirect_uri": ANILIST_REDIRECT_URI,
             "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
             "state": secrets.token_urlsafe(16),
         }
     else:
