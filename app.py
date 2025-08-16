@@ -15,10 +15,7 @@ from frontend.components import (
     sync_config_component, sync_button_component, sync_results_component,
     anime_list_component
 )
-from frontend.auth import (
-    get_session_state, check_auth, init_mal_auth, init_anilist_auth,
-    handle_auth_callback, logout, get_auth_status, require_auth, authenticate_user
-)
+from frontend.auth import authenticate_user, get_auth_status, require_auth
 
 # Import backend modules
 from backend.models import SyncConfig, SyncResult, SyncDifference

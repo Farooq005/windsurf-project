@@ -1,5 +1,5 @@
 """API endpoints for the Anime List Sync application."""
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles

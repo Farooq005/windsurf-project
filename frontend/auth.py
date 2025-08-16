@@ -10,6 +10,8 @@ import os
 # API base URL
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
+__all__ = ["authenticate_user", "get_auth_status", "require_auth"]
+
 def get_session_state() -> Dict[str, Any]:
     """Get or initialize the session state."""
     if not hasattr(st, 'session_state'):
