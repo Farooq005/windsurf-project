@@ -8,6 +8,10 @@ import logging
 import requests
 from typing import Dict, Any, Optional, List
 import pandas as pd
+import subprocess
+import atexit
+import threading
+import uvicorn
 
 # Import frontend components
 from frontend.components import (
@@ -49,6 +53,19 @@ if 'sync_history' not in st.session_state:
     st.session_state.sync_history = []
 if 'last_sync_result' not in st.session_state:
     st.session_state.last_sync_result = None
+if "server_started" not in st.session_state:
+    st.session_state.server_started = False
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = {"mal": False, "anilist": False}
+
+# Start the FastAPI server
+if not st.session_state.server_started:
+    def run_server():
+        uvicorn.run("backend.api:app", host="0.0.0.0", port=8000, reload=False)
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    st.session_state.server_started = True
 
 # Initialize API clients with tokens
 mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
@@ -216,16 +233,20 @@ def render_sync_page():
     with col1:
         with st.container(border=True):
             st.subheader("MyAnimeList")
-            if st.button("Authenticate with MyAnimeList", key="auth_mal"):
-                authenticate_user("MyAnimeList")
-                st.experimental_rerun()
+            if not st.session_state.authenticated["mal"]:
+                if st.button("Authenticate with MyAnimeList", key="auth_mal"):
+                    authenticate_user("mal")
+                    st.session_state.authenticated["mal"] = True
+                    st.experimental_rerun()
     
     with col2:
         with st.container(border=True):
             st.subheader("AniList")
-            if st.button("Authenticate with AniList", key="auth_anilist"):
-                authenticate_user("AniList")
-                st.experimental_rerun()
+            if not st.session_state.authenticated["anilist"]:
+                if st.button("Authenticate with AniList", key="auth_anilist"):
+                    authenticate_user("AniList")
+                    st.session_state.authenticated["anilist"] = True
+                    st.experimental_rerun()
     
     # Sync options
     st.header("⚙️ Sync Options")
@@ -248,7 +269,7 @@ def render_sync_page():
     
     # Sync button
     if st.button("🔄 Start Sync", type="primary", use_container_width=True, key="sync_button"):
-        if not get_auth_status("MyAnimeList") or not get_auth_status("AniList"):
+        if not st.session_state.authenticated["mal"] or not st.session_state.authenticated["anilist"]:
             st.error("Please authenticate with both platforms")
             return
         
