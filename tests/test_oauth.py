@@ -1,5 +1,9 @@
 """Tests for OAuth authentication."""
 import pytest
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from unittest.mock import patch, MagicMock
 from backend.oauth_service import generate_pkce, get_authorization_url, exchange_code_for_token
 

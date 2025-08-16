@@ -30,8 +30,8 @@ class AnimeSyncManager:
     
     def __init__(self, mal_client: Optional[MALClient] = None, anilist_client: Optional[AniListClient] = None):
         """Initialize with optional API clients."""
-        self.mal_client = mal_client or MALClient()
-        self.anilist_client = anilist_client or AniListClient()
+        self.mal_client = mal_client
+        self.anilist_client = anilist_client
         self.sync_history: List[SyncResult] = []
         self.sync_staging = {}  # Store staging data between sync operations
         self.max_retries = 3

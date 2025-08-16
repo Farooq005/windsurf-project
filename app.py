@@ -55,7 +55,10 @@ mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.ma
 anilist_client = AniListClient(st.session_state.anilist_access_token) if st.session_state.anilist_access_token else None
 
 # Initialize sync manager
-sync_manager = AnimeSyncManager(mal_client, anilist_client)
+if mal_client and anilist_client:
+    sync_manager = AnimeSyncManager(mal_client, anilist_client)
+else:
+    sync_manager = None
 
 # Configure page
 st.set_page_config(
@@ -172,7 +175,12 @@ def get_platform_icon(platform: str) -> str:
 # Initialize API clients and sync manager
 @st.cache_resource
 def get_sync_manager():
-    return AnimeSyncManager(MALClient(st.session_state.mal_access_token), AniListClient(st.session_state.anilist_access_token))
+    mal_client = MALClient(st.session_state.mal_access_token) if st.session_state.mal_access_token else None
+    anilist_client = AniListClient(st.session_state.anilist_access_token) if st.session_state.anilist_access_token else None
+    if mal_client and anilist_client:
+        return AnimeSyncManager(mal_client, anilist_client)
+    else:
+        return None
 
 sync_manager = get_sync_manager()
 

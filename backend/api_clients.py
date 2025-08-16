@@ -43,11 +43,10 @@ class BaseAPIClient:
             raise HTTPException(status_code=401, detail="Not authenticated. Please log in first.")
 
 class MALClient(BaseAPIClient):
-    BASE_URL = "https://api.myanimelist.net/v2"
-    
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: str = None):
         super().__init__()
         self.access_token = access_token
+        self.base_url = "https://api.myanimelist.net/v2"
         self.client_id = os.getenv('MAL_CLIENT_ID')
         if not self.client_id:
             raise ValueError("MAL_CLIENT_ID not found in environment variables")
@@ -76,7 +75,7 @@ class MALClient(BaseAPIClient):
                 raise ValueError("No username provided and no authenticated user set")
             username = self.username
             
-        url = f"{self.BASE_URL}/users/{username}/animelist"
+        url = f"{self.base_url}/users/{username}/animelist"
         params = {
             'fields': 'list_status,num_episodes',
             'limit': 1000,  # Increased limit to get all entries in one request
@@ -125,7 +124,7 @@ class MALClient(BaseAPIClient):
         return PlatformList(username=username, anime_list=anime_entries)
 
     def search_anime_id(self, title: str) -> Optional[int]:
-        url = f"{self.BASE_URL}/anime"
+        url = f"{self.base_url}/anime"
         params = {
             "q": title,
             "limit": 1
@@ -166,7 +165,7 @@ class MALClient(BaseAPIClient):
         if status is None and score is None and progress is None:
             raise ValueError("At least one of status, score, or progress must be provided")
             
-        url = f"{self.BASE_URL}/anime/{anime_id}/my_list_status"
+        url = f"{self.base_url}/anime/{anime_id}/my_list_status"
         data = {}
         
         # Map status to MAL's expected values
@@ -214,12 +213,10 @@ class MALClient(BaseAPIClient):
             raise Exception(error_msg) from e
 
 class AniListClient(BaseAPIClient):
-    BASE_URL = "https://graphql.anilist.co"
-    
-    def __init__(self, access_token: str = None, username: str = None):
+    def __init__(self, access_token: str = None):
         super().__init__()
-        if access_token:
-            self.set_credentials(access_token, username)
+        self.access_token = access_token
+        self.base_url = "https://graphql.anilist.co"
         
     def get_user_list(self, username: str = None) -> PlatformList:
         """
@@ -329,7 +326,7 @@ class AniListClient(BaseAPIClient):
         }
         
         response = self.session.post(
-            self.BASE_URL,
+            self.base_url,
             json={'query': query, 'variables': variables},
             headers=headers
         )
@@ -373,7 +370,7 @@ class AniListClient(BaseAPIClient):
         }
         '''
         variables = {"search": title}
-        resp = self.session.post(self.BASE_URL, json={"query": query, "variables": variables})
+        resp = self.session.post(self.base_url, json={"query": query, "variables": variables})
         resp.raise_for_status()
         data = resp.json()
         media = (data.get('data') or {}).get('Media')
@@ -460,7 +457,7 @@ class AniListClient(BaseAPIClient):
         
         try:
             response = self.session.post(
-                self.BASE_URL,
+                self.base_url,
                 headers=headers,
                 json={
                     'query': mutation,
