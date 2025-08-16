@@ -17,7 +17,7 @@ from frontend.components import (
 )
 from frontend.auth import (
     get_session_state, check_auth, init_mal_auth, init_anilist_auth,
-    handle_auth_callback, logout, get_auth_status, require_auth
+    handle_auth_callback, logout, get_auth_status, require_auth, authenticate_user
 )
 
 # Import backend modules
@@ -202,20 +202,16 @@ def render_sync_page():
     with col1:
         with st.container(border=True):
             st.subheader("MyAnimeList")
-            mal_username = st.text_input("MAL Username", key="mal_username")
-            mal_token = st.text_input("MAL Access Token", type="password", 
-                                   help="Get your MAL access token from https://myanimelist.net/apiconfig")
-            if mal_token:
-                st.session_state.mal_token = mal_token
+            if st.button("Authenticate with MyAnimeList", key="auth_mal"):
+                authenticate_user("MyAnimeList")
+                st.experimental_rerun()
     
     with col2:
         with st.container(border=True):
             st.subheader("AniList")
-            anilist_username = st.text_input("AniList Username", key="anilist_username")
-            anilist_token = st.text_input("AniList Access Token", type="password",
-                                       help="Get your AniList access token from https://anilist.co/api/v2/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=token")
-            if anilist_token:
-                st.session_state.anilist_token = anilist_token
+            if st.button("Authenticate with AniList", key="auth_anilist"):
+                authenticate_user("AniList")
+                st.experimental_rerun()
     
     # Sync options
     st.header("⚙️ Sync Options")
@@ -238,8 +234,8 @@ def render_sync_page():
     
     # Sync button
     if st.button("🔄 Start Sync", type="primary", use_container_width=True, key="sync_button"):
-        if not mal_username or not anilist_username:
-            st.error("Please provide both usernames")
+        if not get_auth_status("MyAnimeList") or not get_auth_status("AniList"):
+            st.error("Please authenticate with both platforms")
             return
         
         # Determine sync direction
@@ -251,8 +247,8 @@ def render_sync_page():
         
         # Create sync config
         sync_config = SyncConfig(
-            mal_username=mal_username,
-            anilist_username=anilist_username,
+            mal_username=get_session_state().mal_username,
+            anilist_username=get_session_state().anilist_username,
             target_platform=("MyAnimeList" if "to MAL" in sync_direction else "AniList")
         )
         

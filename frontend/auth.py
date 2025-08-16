@@ -42,39 +42,28 @@ def check_auth() -> bool:
         st.error(f"Error checking authentication status: {e}")
     return False
 
-def init_mal_auth() -> None:
-    """Initialize MAL OAuth2 flow."""
-    try:
-        response = requests.get(f"{API_BASE_URL}/auth/mal/init")
-        if response.status_code == 200:
-            auth_url = response.json().get('url')
-            if auth_url:
-                st.session_state['mal_auth_url'] = auth_url
-                st.markdown(f"[Click here to authenticate with MyAnimeList]({auth_url})")
-                st.experimental_rerun()
-            else:
-                st.error("Failed to get authentication URL")
-        else:
-            st.error(f"Failed to initialize MAL authentication: {response.text}")
-    except Exception as e:
-        st.error(f"Error initializing MAL authentication: {e}")
+def authenticate_user(platform: str):
+    """Redirect to backend auth endpoint."""
+    import requests
+    from streamlit import session_state as st_session
+    
+    # Reset any existing tokens
+    st_session.pop(f"{platform}_access_token", None)
+    
+    # Trigger backend auth redirect
+    response = requests.get(f"http://localhost:8000/auth/{platform}")
+    if response.status_code != 200:
+        st.error(f"Failed to start authentication: {response.text}")
+        return
+    
+    # Redirect to the authorization URL
+    st_session.auth_redirect_url = response.url
+    st.experimental_rerun()
 
-def init_anilist_auth() -> None:
-    """Initialize AniList OAuth2 flow."""
-    try:
-        response = requests.get(f"{API_BASE_URL}/auth/anilist/init")
-        if response.status_code == 200:
-            auth_url = response.json().get('url')
-            if auth_url:
-                st.session_state['anilist_auth_url'] = auth_url
-                st.markdown(f"[Click here to authenticate with AniList]({auth_url})")
-                st.experimental_rerun()
-            else:
-                st.error("Failed to get authentication URL")
-        else:
-            st.error(f"Failed to initialize AniList authentication: {response.text}")
-    except Exception as e:
-        st.error(f"Error initializing AniList authentication: {e}")
+def get_auth_status(platform: str) -> bool:
+    """Check if user is authenticated for the given platform."""
+    from streamlit import session_state as st_session
+    return f"{platform}_access_token" in st_session
 
 def handle_auth_callback() -> None:
     """Handle OAuth2 callback from the URL parameters."""
@@ -143,17 +132,6 @@ def logout() -> None:
     except Exception as e:
         st.error(f"Error logging out: {e}")
 
-def get_auth_status() -> Dict[str, Any]:
-    """Get the current authentication status."""
-    state = get_session_state()
-    return {
-        'authenticated': state['authenticated'],
-        'mal_authenticated': state['mal_authenticated'],
-        'anilist_authenticated': state['anilist_authenticated'],
-        'mal_username': state['mal_username'],
-        'anilist_username': state['anilist_username']
-    }
-
 def require_auth(platform: str = 'any') -> bool:
     """
     Require authentication for a specific platform.
@@ -168,11 +146,11 @@ def require_auth(platform: str = 'any') -> bool:
     
     if platform == 'mal' and not state['mal_authenticated']:
         st.warning("Please authenticate with MyAnimeList to continue.")
-        init_mal_auth()
+        authenticate_user('mal')
         return False
     elif platform == 'anilist' and not state['anilist_authenticated']:
         st.warning("Please authenticate with AniList to continue.")
-        init_anilist_auth()
+        authenticate_user('anilist')
         return False
     elif platform == 'any' and not (state['mal_authenticated'] or state['anilist_authenticated']):
         st.warning("Please authenticate with at least one platform to continue.")

@@ -13,6 +13,7 @@ from .auth import (
     get_anilist_auth_url,
     handle_anilist_callback
 )
+from .oauth_service import get_authorization_url, exchange_code_for_token
 
 app = FastAPI(
     title="Anime List Sync API",
@@ -43,103 +44,38 @@ class CallbackResponse(BaseModel):
     username: Optional[str] = None
     error: Optional[str] = None
 
-@app.get("/auth/mal/init")
-async def init_mal_auth(request: Request) -> AuthResponse:
-    """Initialize MAL OAuth2 flow."""
-    try:
-        auth_url = get_mal_auth_url(request)
-        return {"success": True, "url": auth_url}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+router = APIRouter()
 
-@app.get("/auth/mal/callback")
-async def mal_callback(request: Request) -> CallbackResponse:
-    """Handle MAL OAuth2 callback."""
+@router.get("/auth/{platform}")
+async def auth_redirect(platform: str):
+    """Redirect to the platform's authorization URL."""
     try:
-        token_data, username = await handle_mal_callback(request)
-        # Store token in session
-        session_id = request.cookies.get("session_id")
-        if not session_id or session_id not in user_sessions:
-            session_id = os.urandom(16).hex()
-            user_sessions[session_id] = {}
-        
-        user_sessions[session_id]["mal"] = {
-            "access_token": token_data["access_token"],
-            "refresh_token": token_data.get("refresh_token"),
-            "expires_in": token_data.get("expires_in"),
-            "username": username
-        }
-        
-        response = {
-            "success": True,
-            "token": token_data,
-            "username": username
-        }
-        
-        # Create response with session cookie
-        response = JSONResponse(content=response)
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=30 * 24 * 3600  # 30 days
-        )
-        
-        return response
-        
+        auth_url, code_verifier = get_authorization_url(platform)
+        # Store code_verifier in session or database (for demo, we use session)
+        request.session[f"{platform}_code_verifier"] = code_verifier
+        return RedirectResponse(url=auth_url)
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/auth/anilist/init")
-async def init_anilist_auth(request: Request) -> AuthResponse:
-    """Initialize AniList OAuth2 flow."""
+@router.get("/auth/{platform}/callback")
+async def auth_callback(platform: str, code: str, state: str, request: Request):
+    """Handle OAuth callback and exchange code for tokens."""
+    # Retrieve the stored code_verifier
+    code_verifier = request.session.get(f"{platform}_code_verifier")
+    if not code_verifier:
+        raise HTTPException(status_code=400, detail="Code verifier not found")
+    
     try:
-        auth_url = get_anilist_auth_url(request)
-        return {"success": True, "url": auth_url}
+        token_data = exchange_code_for_token(platform, code, code_verifier)
+        # Store tokens securely (e.g., in database or session)
+        request.session[f"{platform}_access_token"] = token_data["access_token"]
+        request.session[f"{platform}_refresh_token"] = token_data.get("refresh_token")
+        # Redirect to frontend with success
+        return RedirectResponse(url=f"/?auth_success={platform}")
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/auth/anilist/callback")
-async def anilist_callback(request: Request) -> CallbackResponse:
-    """Handle AniList OAuth2 callback."""
-    try:
-        token_data, username = await handle_anilist_callback(request)
-        # Store token in session
-        session_id = request.cookies.get("session_id")
-        if not session_id or session_id not in user_sessions:
-            session_id = os.urandom(16).hex()
-            user_sessions[session_id] = {}
-        
-        user_sessions[session_id]["anilist"] = {
-            "access_token": token_data["access_token"],
-            "refresh_token": token_data.get("refresh_token"),
-            "expires_in": token_data.get("expires_in"),
-            "username": username
-        }
-        
-        response = {
-            "success": True,
-            "token": token_data,
-            "username": username
-        }
-        
-        # Create response with session cookie
-        response = JSONResponse(content=response)
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=30 * 24 * 3600  # 30 days
-        )
-        
-        return response
-        
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+app.include_router(router)
 
 @app.get("/auth/session")
 async def get_session(request: Request) -> Dict:

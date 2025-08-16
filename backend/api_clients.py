@@ -45,14 +45,20 @@ class BaseAPIClient:
 class MALClient(BaseAPIClient):
     BASE_URL = "https://api.myanimelist.net/v2"
     
-    def __init__(self, access_token: str = None, username: str = None):
+    def __init__(self, access_token: str):
         super().__init__()
+        self.access_token = access_token
         self.client_id = os.getenv('MAL_CLIENT_ID')
         if not self.client_id:
             raise ValueError("MAL_CLIENT_ID not found in environment variables")
-        if access_token:
-            self.set_credentials(access_token, username)
         
+    def get_headers(self):
+        return {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+            "X-MAL-CLIENT-ID": self.client_id
+        }
+
     def get_user_list(self, username: str = None) -> PlatformList:
         """
         Get the user's anime list.
@@ -77,17 +83,12 @@ class MALClient(BaseAPIClient):
             'nsfw': 'true'  # Include NSFW content
         }
         
-        headers = {
-            'X-MAL-CLIENT-ID': self.client_id,
-            'Authorization': f'Bearer {self.access_token}'
-        }
-        
         anime_entries: List[AnimeEntry] = []
         next_url: Optional[str] = url
         next_params: Optional[Dict] = params
 
         while next_url:
-            response = self.session.get(next_url, params=next_params, headers=headers)
+            response = self.session.get(next_url, params=next_params, headers=self.get_headers())
             if self._handle_rate_limit(response):
                 # try again after waiting
                 time.sleep(1)
@@ -123,21 +124,15 @@ class MALClient(BaseAPIClient):
 
         return PlatformList(username=username, anime_list=anime_entries)
 
-    def _auth_headers(self) -> Dict[str, str]:
-        if not self.access_token:
-            raise ValueError("MAL access token missing. Set MAL_ACCESS_TOKEN in credentials.env")
-        return {"Authorization": f"Bearer {self.access_token}"}
-
     def search_anime_id(self, title: str) -> Optional[int]:
         url = f"{self.BASE_URL}/anime"
         params = {
             "q": title,
             "limit": 1
         }
-        headers = {"X-MAL-CLIENT-ID": self.client_id}
-        resp = self.session.get(url, params=params, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+        response = self.session.get(url, params=params, headers=self.get_headers())
+        response.raise_for_status()
+        data = response.json()
         first = (data.get('data') or [])
         if not first:
             return None
@@ -197,10 +192,9 @@ class MALClient(BaseAPIClient):
         if isinstance(progress, (int, float)):
             data["num_watched_episodes"] = max(0, int(progress))
             
-        headers = self._auth_headers()
+        headers = self.get_headers()
         headers.update({
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-MAL-Client-ID': self.client_id
+            'Content-Type': 'application/x-www-form-urlencoded'
         })
         
         try:
@@ -218,7 +212,6 @@ class MALClient(BaseAPIClient):
                 except:
                     error_msg += f" - {e.response.text}"
             raise Exception(error_msg) from e
-        
 
 class AniListClient(BaseAPIClient):
     BASE_URL = "https://graphql.anilist.co"
