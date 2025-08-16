@@ -228,6 +228,19 @@ def render_sync_page():
     
     # Platform authentication
     st.header("🔑 Authentication")
+
+    # Handle OAuth success redirect from backend
+    params = st.experimental_get_query_params()
+    if 'auth_success' in params:
+        platform = (params['auth_success'][0] or '').lower()
+        if platform in st.session_state.authenticated:
+            st.session_state.authenticated[platform] = True
+            st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}!")
+        # Clear temporary auth redirect state and URL params
+        st.session_state.pop('auth_redirect_url', None)
+        st.session_state.pop('auth_platform', None)
+        st.experimental_set_query_params()
+        st.experimental_rerun()
     col1, col2 = st.columns(2)
     
     with col1:
@@ -236,17 +249,19 @@ def render_sync_page():
             if not st.session_state.authenticated["mal"]:
                 if st.button("Authenticate with MyAnimeList", key="auth_mal"):
                     authenticate_user("mal")
-                    st.session_state.authenticated["mal"] = True
-                    st.experimental_rerun()
+                # If backend provided an auth URL, show a link button to continue
+                if st.session_state.get("auth_platform") == "mal" and st.session_state.get("auth_redirect_url"):
+                    st.link_button("Continue to MyAnimeList ➜", st.session_state.auth_redirect_url, use_container_width=True)
     
     with col2:
         with st.container(border=True):
             st.subheader("AniList")
             if not st.session_state.authenticated["anilist"]:
                 if st.button("Authenticate with AniList", key="auth_anilist"):
-                    authenticate_user("AniList")
-                    st.session_state.authenticated["anilist"] = True
-                    st.experimental_rerun()
+                    authenticate_user("anilist")
+                # If backend provided an auth URL, show a link button to continue
+                if st.session_state.get("auth_platform") == "anilist" and st.session_state.get("auth_redirect_url"):
+                    st.link_button("Continue to AniList ➜", st.session_state.auth_redirect_url, use_container_width=True)
     
     # Sync options
     st.header("⚙️ Sync Options")

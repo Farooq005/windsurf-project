@@ -46,21 +46,55 @@ def check_auth() -> bool:
 
 def authenticate_user(platform: str):
     """Redirect to backend auth endpoint."""
+    import time
     import requests
     from streamlit import session_state as st_session
-    
+
+    # Normalize platform casing
+    platform = platform.lower()
+
     # Reset any existing tokens
     st_session.pop(f"{platform}_access_token", None)
-    
-    # Trigger backend auth redirect
-    response = requests.get(f"http://localhost:8000/auth/{platform}")
-    if response.status_code != 200:
-        st.error(f"Failed to start authentication: {response.text}")
+
+    # Wait for backend to be ready
+    health_url = f"{API_BASE_URL}/health"
+    for _ in range(25):  # ~5 seconds max
+        try:
+            r = requests.get(health_url, timeout=0.2)
+            if r.status_code == 200:
+                break
+        except Exception:
+            time.sleep(0.2)
+    else:
+        st.error("Backend is not ready. Please try again in a moment.")
         return
-    
-    # Redirect to the authorization URL
-    st_session.auth_redirect_url = response.url
-    st.experimental_rerun()
+
+    # Trigger backend auth redirect without following it
+    response = requests.get(f"{API_BASE_URL}/auth/{platform}", allow_redirects=False)
+    if response.status_code in (301, 302, 303, 307, 308):
+        auth_url = response.headers.get("Location") or response.headers.get("location")
+        if not auth_url:
+            st.error("Backend did not provide an authorization URL.")
+            return
+        # Store URL for the app to render a link/button
+        st_session.auth_redirect_url = auth_url
+        st_session.auth_platform = platform
+        st.experimental_rerun()
+    elif response.status_code == 200:
+        # Some backends may return JSON with the URL; try to parse
+        try:
+            data = response.json()
+            auth_url = data.get("url")
+            if auth_url:
+                st_session.auth_redirect_url = auth_url
+                st_session.auth_platform = platform
+                st.experimental_rerun()
+                return
+        except Exception:
+            pass
+        st.error("Unexpected response from authentication endpoint.")
+    else:
+        st.error(f"Failed to start authentication: {response.status_code} {response.text}")
 
 def get_auth_status(platform: str) -> bool:
     """Check if user is authenticated for the given platform."""
