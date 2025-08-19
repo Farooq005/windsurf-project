@@ -188,12 +188,13 @@ def handle_auth_callback() -> None:
             client_secret = _cfg("MAL_CLIENT_SECRET")
             data = {
                 "client_id": client_id,
-                "client_secret": client_secret,
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "code_verifier": verifier,
             }
+            if client_secret:
+                data["client_secret"] = client_secret
             resp = requests.post(MAL_TOKEN_URL, data=data, timeout=15)
         else:
             client_id = _cfg("ANILIST_CLIENT_ID")

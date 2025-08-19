@@ -9,13 +9,31 @@ import logging
 from typing import Dict, Any, Optional, List
 import pandas as pd
 
-# Import frontend components
-from frontend.components import (
-    load_css, show_message, auth_status_component,
-    sync_config_component, sync_button_component, sync_results_component,
-    anime_list_component
-)
-from frontend.auth import authenticate_user, get_auth_status, require_auth, handle_auth_callback
+# Ensure the app directory takes precedence to avoid conflicts with any 3rd-party 'frontend' package
+import sys as _sys
+_APP_DIR = os.path.dirname(__file__)
+if _APP_DIR not in _sys.path:
+    _sys.path.insert(0, _APP_DIR)
+
+# Import frontend components with a safe fallback
+try:
+    from frontend.components import (
+        load_css, show_message, auth_status_component,
+        sync_config_component, sync_button_component, sync_results_component,
+        anime_list_component
+    )
+    from frontend.auth import authenticate_user, get_auth_status, require_auth, handle_auth_callback
+except Exception:
+    # If a 3rd-party 'frontend' is shadowing, try importing from installed package name
+    try:
+        from anime_list_sync.frontend.components import (
+            load_css, show_message, auth_status_component,
+            sync_config_component, sync_button_component, sync_results_component,
+            anime_list_component
+        )
+        from anime_list_sync.frontend.auth import authenticate_user, get_auth_status, require_auth, handle_auth_callback
+    except Exception as _e:
+        raise
 
 # Import backend modules
 from backend.models import SyncConfig, SyncResult, SyncDifference
@@ -227,7 +245,13 @@ def render_sync_page():
                         f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to MyAnimeList ➜</a>',
                         unsafe_allow_html=True
                     )
-                    st.info("If not redirected automatically, click the link above to continue in the same tab.")
+                    if st.button("Continue in same tab (fallback)", key="mal_continue_btn"):
+                        components.html(
+                            f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
+                            height=0,
+                            width=0
+                        )
+                    st.info("If not redirected automatically, click one of the options above to continue in the same tab.")
     
     with col2:
         with st.container(border=True):
@@ -241,7 +265,13 @@ def render_sync_page():
                         f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to AniList ➜</a>',
                         unsafe_allow_html=True
                     )
-                    st.info("If not redirected automatically, click the link above to continue in the same tab.")
+                    if st.button("Continue in same tab (fallback)", key="anilist_continue_btn"):
+                        components.html(
+                            f'<script>window.top.location.href = "{st.session_state.auth_redirect_url}";</script>',
+                            height=0,
+                            width=0
+                        )
+                    st.info("If not redirected automatically, click one of the options above to continue in the same tab.")
     
     # Sync options
     st.header("⚙️ Sync Options")
