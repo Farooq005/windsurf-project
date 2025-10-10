@@ -191,15 +191,38 @@ def get_platform_icon(platform: str) -> str:
 
 # Initialize API clients and sync manager
 @st.cache_resource
-def get_sync_manager(mal_token: Optional[str], anilist_token: Optional[str]):
-    mal_client = MALClient(mal_token) if mal_token else None
-    anilist_client = AniListClient(anilist_token) if anilist_token else None
+def get_sync_manager(
+    mal_token: Optional[str],
+    anilist_token: Optional[str],
+    mal_username: Optional[str] = None,
+    anilist_username: Optional[str] = None
+):
+    """Create sync manager with authenticated clients."""
+    mal_client = None
+    anilist_client = None
+
+    if mal_token:
+        try:
+            mal_client = MALClient(mal_token, mal_username)
+        except Exception as e:
+            st.warning(f"Failed to initialize MAL client: {e}")
+
+    if anilist_token:
+        try:
+            anilist_client = AniListClient(anilist_token, anilist_username)
+        except Exception as e:
+            st.warning(f"Failed to initialize AniList client: {e}")
+
     if mal_client and anilist_client:
         return AnimeSyncManager(mal_client, anilist_client)
-    else:
-        return None
+    return None
 
-sync_manager = get_sync_manager(st.session_state.mal_access_token, st.session_state.anilist_access_token)
+sync_manager = get_sync_manager(
+    st.session_state.mal_access_token,
+    st.session_state.anilist_access_token,
+    st.session_state.mal_username,
+    st.session_state.anilist_username
+)
 
 def main():
     st.sidebar.title("AniSync")
@@ -236,10 +259,19 @@ def render_sync_page():
     with col1:
         with st.container(border=True):
             st.subheader("MyAnimeList")
-            if not st.session_state.authenticated["mal"]:
+            if st.session_state.authenticated["mal"]:
+                username = st.session_state.mal_username or "Unknown"
+                st.success(f"✅ Authenticated as {username}")
+                if st.button("Disconnect", key="disconnect_mal"):
+                    st.session_state.mal_access_token = None
+                    st.session_state.mal_refresh_token = None
+                    st.session_state.mal_username = None
+                    st.session_state.authenticated["mal"] = False
+                    st.rerun()
+            else:
                 if st.button("Authenticate with MyAnimeList", key="auth_mal"):
                     authenticate_user("mal")
-                # If backend provided an auth URL, show a SAME-TAB link (avoids new Streamlit session)
+                # If backend provided an auth URL, show a SAME-TAB link
                 if st.session_state.get("auth_platform") == "mal" and st.session_state.get("auth_redirect_url"):
                     st.markdown(
                         f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to MyAnimeList ➜</a>',
@@ -256,10 +288,19 @@ def render_sync_page():
     with col2:
         with st.container(border=True):
             st.subheader("AniList")
-            if not st.session_state.authenticated["anilist"]:
+            if st.session_state.authenticated["anilist"]:
+                username = st.session_state.anilist_username or "Unknown"
+                st.success(f"✅ Authenticated as {username}")
+                if st.button("Disconnect", key="disconnect_anilist"):
+                    st.session_state.anilist_access_token = None
+                    st.session_state.anilist_refresh_token = None
+                    st.session_state.anilist_username = None
+                    st.session_state.authenticated["anilist"] = False
+                    st.rerun()
+            else:
                 if st.button("Authenticate with AniList", key="auth_anilist"):
                     authenticate_user("anilist")
-                # If backend provided an auth URL, show a SAME-TAB link (avoids new Streamlit session)
+                # If backend provided an auth URL, show a SAME-TAB link
                 if st.session_state.get("auth_platform") == "anilist" and st.session_state.get("auth_redirect_url"):
                     st.markdown(
                         f'<a href="{st.session_state.auth_redirect_url}" target="_self">Continue to AniList ➜</a>',
@@ -325,8 +366,13 @@ def render_sync_page():
             progress_bar.progress(30)
             status_text.info("🔄 Syncing your lists...")
             
-            # Build a fresh manager with current tokens
-            manager = get_sync_manager(st.session_state.mal_access_token, st.session_state.anilist_access_token)
+            # Build a fresh manager with current tokens and usernames
+            manager = get_sync_manager(
+                st.session_state.mal_access_token,
+                st.session_state.anilist_access_token,
+                st.session_state.mal_username,
+                st.session_state.anilist_username
+            )
             if not manager:
                 raise RuntimeError("Sync manager not initialized. Ensure both platforms are authenticated.")
             result = manager.sync(

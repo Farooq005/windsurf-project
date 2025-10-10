@@ -30,6 +30,8 @@ class AnimeSyncManager:
     
     def __init__(self, mal_client: Optional[MALClient] = None, anilist_client: Optional[AniListClient] = None):
         """Initialize with optional API clients."""
+        if not mal_client and not anilist_client:
+            raise ValueError("At least one API client (MAL or AniList) must be provided")
         self.mal_client = mal_client
         self.anilist_client = anilist_client
         self.sync_history: List[SyncResult] = []
@@ -207,10 +209,15 @@ class AnimeSyncManager:
             
             for attempt in range(1, self.max_retries + 1):
                 try:
+                    # Convert MAL score (0-10) to AniList score (0-100)
+                    anilist_score = None
+                    if entry.score is not None:
+                        anilist_score = entry.score * 10 if entry.score <= 10 else entry.score
+
                     self.anilist_client.save_list_entry(
                         title=entry.title,
                         status=entry.status,
-                        score=entry.score * 10 if entry.score is not None else None,  # Convert 0-10 to 0-100
+                        score=anilist_score,
                         progress=entry.episodes_watched,
                     )
                     success += 1
@@ -264,6 +271,12 @@ class AnimeSyncManager:
         try:
             logger.info(f"Starting sync with direction: {direction.value}")
             
+            # Validate clients for the requested direction
+            if direction in [SyncDirection.MAL_TO_ANILIST, SyncDirection.BIDIRECTIONAL] and not self.anilist_client:
+                raise Exception("AniList client not initialized. Cannot sync to AniList.")
+            if direction in [SyncDirection.ANILIST_TO_MAL, SyncDirection.BIDIRECTIONAL] and not self.mal_client:
+                raise Exception("MAL client not initialized. Cannot sync to MAL.")
+
             # Get AniList list if needed
             anilist_list = None
             if direction in [SyncDirection.MAL_TO_ANILIST, SyncDirection.BIDIRECTIONAL]:
@@ -303,7 +316,11 @@ class AnimeSyncManager:
                 entries_to_sync = comparison["anilist_only"]
                 if entries_to_sync:
                     logger.info(f"Syncing {len(entries_to_sync)} entries from AniList to MAL")
-                    sync_results["to_mal"] = self._sync_to_mal(config.mal_username, entries_to_sync)
+                    # Use username from client if config doesn't have it
+                    mal_user = config.mal_username or (self.mal_client.username if self.mal_client else None)
+                    if not mal_user:
+                        raise Exception("MAL username not provided and could not be determined")
+                    sync_results["to_mal"] = self._sync_to_mal(mal_user, entries_to_sync)
                 else:
                     logger.info("No entries to sync from AniList to MAL")
             
@@ -312,7 +329,11 @@ class AnimeSyncManager:
                 entries_to_sync = comparison["mal_only"]
                 if entries_to_sync:
                     logger.info(f"Syncing {len(entries_to_sync)} entries from MAL to AniList")
-                    sync_results["to_anilist"] = self._sync_to_anilist(config.anilist_username, entries_to_sync)
+                    # Use username from client if config doesn't have it
+                    anilist_user = config.anilist_username or (self.anilist_client.username if self.anilist_client else None)
+                    if not anilist_user:
+                        raise Exception("AniList username not provided and could not be determined")
+                    sync_results["to_anilist"] = self._sync_to_anilist(anilist_user, entries_to_sync)
                 else:
                     logger.info("No entries to sync from MAL to AniList")
             

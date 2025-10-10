@@ -29,6 +29,16 @@ class BaseAPIClient:
         self.access_token = access_token
         if username:
             self.username = username
+        # Fetch username if not provided
+        if access_token and not username:
+            try:
+                self.username = self._fetch_username()
+            except Exception:
+                pass
+
+    def _fetch_username(self) -> Optional[str]:
+        """Fetch username from the API. Override in subclasses."""
+        return None
 
     def _handle_rate_limit(self, response):
         if response.status_code == 429:
@@ -43,15 +53,21 @@ class BaseAPIClient:
             raise HTTPException(status_code=401, detail="Not authenticated. Please log in first.")
 
 class MALClient(BaseAPIClient):
-    def __init__(self, access_token: str = None):
+    def __init__(self, access_token: str = None, username: str = None):
         super().__init__()
         # Default to env token/username if not provided
         self.access_token = access_token or os.getenv('MAL_ACCESS_TOKEN')
-        self.username = os.getenv('MAL_USERNAME') or self.username
+        self.username = username or os.getenv('MAL_USERNAME')
         self.base_url = "https://api.myanimelist.net/v2"
         self.client_id = os.getenv('MAL_CLIENT_ID')
         if not self.client_id:
             raise ValueError("MAL_CLIENT_ID not found in environment variables")
+        # Fetch username if we have a token but no username
+        if self.access_token and not self.username:
+            try:
+                self.username = self._fetch_username()
+            except Exception:
+                pass
         
     def get_headers(self):
         return {
@@ -59,6 +75,23 @@ class MALClient(BaseAPIClient):
             "Content-Type": "application/json",
             "X-MAL-CLIENT-ID": self.client_id
         }
+
+    def _fetch_username(self) -> Optional[str]:
+        """Fetch the authenticated user's username from MAL."""
+        if not self.access_token:
+            return None
+        try:
+            response = self.session.get(
+                f"{self.base_url}/users/@me",
+                headers=self.get_headers(),
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("name")
+        except Exception:
+            pass
+        return None
 
     def get_user_list(self, username: str = None) -> PlatformList:
         """
@@ -219,12 +252,18 @@ class MALClient(BaseAPIClient):
             raise Exception(error_msg) from e
 
 class AniListClient(BaseAPIClient):
-    def __init__(self, access_token: str = None):
+    def __init__(self, access_token: str = None, username: str = None):
         super().__init__()
         # Default to env token/username if not provided
         self.access_token = access_token or os.getenv('ANILIST_ACCESS_TOKEN')
-        self.username = os.getenv('ANILIST_USERNAME') or self.username
+        self.username = username or os.getenv('ANILIST_USERNAME')
         self.base_url = "https://graphql.anilist.co"
+        # Fetch username if we have a token but no username
+        if self.access_token and not self.username:
+            try:
+                self.username = self._fetch_username()
+            except Exception:
+                pass
         
     def get_user_list(self, username: str = None) -> PlatformList:
         """
@@ -371,6 +410,32 @@ class AniListClient(BaseAPIClient):
             raise ValueError("AniList access token missing. Set ANILIST_ACCESS_TOKEN in credentials.env")
         return {"Authorization": f"Bearer {self.access_token}"}
 
+    def _fetch_username(self) -> Optional[str]:
+        """Fetch the authenticated user's username from AniList."""
+        if not self.access_token:
+            return None
+        try:
+            query = """
+            query {
+                Viewer {
+                    id
+                    name
+                }
+            }
+            """
+            response = self.session.post(
+                self.base_url,
+                json={"query": query},
+                headers=self._auth_headers(),
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("data", {}).get("Viewer", {}).get("name")
+        except Exception:
+            pass
+        return None
+
     def search_media_id(self, title: str) -> Optional[int]:
         query = '''
         query ($search: String) {
@@ -426,10 +491,20 @@ class AniListClient(BaseAPIClient):
         }
         
         # Prepare variables for the mutation
+        # Handle score conversion: if score is 0-10, convert to 0-100; if already 0-100, keep as is
+        anilist_score_raw = None
+        if isinstance(score, (int, float)) and score is not None:
+            if score <= 10:
+                # Assume it's MAL format (0-10), convert to AniList format (0-100)
+                anilist_score_raw = int(score * 10)
+            else:
+                # Already in AniList format (0-100)
+                anilist_score_raw = int(score)
+
         variables = {
             "mediaId": media_id,
             "status": status_map.get(status.lower()) if status else None,
-            "scoreRaw": float(score) * 10 if isinstance(score, (int, float)) and score is not None else None,
+            "scoreRaw": anilist_score_raw,
             "progress": int(progress) if isinstance(progress, (int, float)) and progress is not None else None,
         }
         

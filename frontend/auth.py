@@ -35,6 +35,50 @@ ANILIST_TOKEN_URL = "https://anilist.co/api/v2/oauth/token"
 
 __all__ = ["authenticate_user", "get_auth_status", "require_auth", "handle_auth_callback"]
 
+def _fetch_username(platform: str, access_token: str) -> Optional[str]:
+    """Fetch the username for the authenticated user.
+
+    Args:
+        platform: Either 'mal' or 'anilist'
+        access_token: OAuth access token
+
+    Returns:
+        Username if successful, None otherwise
+    """
+    try:
+        if platform == "mal":
+            # Fetch MAL user info
+            resp = requests.get(
+                "https://api.myanimelist.net/v2/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("name")
+        else:
+            # Fetch AniList user info
+            query = """
+            query {
+                Viewer {
+                    id
+                    name
+                }
+            }
+            """
+            resp = requests.post(
+                "https://graphql.anilist.co",
+                json={"query": query},
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("data", {}).get("Viewer", {}).get("name")
+    except Exception:
+        pass
+    return None
+
 def get_session_state() -> Dict[str, Any]:
     """Get or initialize the session state."""
     ss = st.session_state
@@ -216,19 +260,30 @@ def handle_auth_callback() -> None:
         token = resp.json()
         access = token.get("access_token")
         refresh = token.get("refresh_token")
+
+        # Fetch username after authentication
+        username = None
+        try:
+            username = _fetch_username(platform, access)
+        except Exception as e:
+            st.warning(f"Authenticated but failed to fetch username: {e}")
+
         if platform == "mal":
             st.session_state.mal_access_token = access
             st.session_state.mal_refresh_token = refresh
+            st.session_state.mal_username = username
             st.session_state.authenticated = st.session_state.get("authenticated", {"mal": False, "anilist": False})
             st.session_state.authenticated["mal"] = True
         else:
             st.session_state.anilist_access_token = access
             st.session_state.anilist_refresh_token = refresh
+            st.session_state.anilist_username = username
             st.session_state.authenticated = st.session_state.get("authenticated", {"mal": False, "anilist": False})
             st.session_state.authenticated["anilist"] = True
         # Cleanup used state
+        ss = get_session_state()
         ss['oauth_state_store'].pop(state, None)
-        st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}!")
+        st.success(f"Successfully authenticated with {'MyAnimeList' if platform=='mal' else 'AniList'}! User: {username or 'Unknown'}")
         # Clear query params and rerun
         try:
             st.query_params.clear()
